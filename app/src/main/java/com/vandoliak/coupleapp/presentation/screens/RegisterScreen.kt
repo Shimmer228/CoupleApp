@@ -4,22 +4,22 @@ import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModelProvider
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.vandoliak.coupleapp.presentation.viewmodel.LoginViewModel
+import androidx.lifecycle.ViewModelProvider
+import com.vandoliak.coupleapp.presentation.viewmodel.RegisterViewModel
 
 @Composable
-fun LoginScreen(
-    onLoginSuccess: () -> Unit,
-    onNavigateToRegister: () -> Unit
+fun RegisterScreen(
+    onRegisterSuccess: () -> Unit,
+    onNavigateToLogin: () -> Unit
 ) {
     val context = LocalContext.current
 
-    val viewModel: LoginViewModel = viewModel(
+    val viewModel: RegisterViewModel = viewModel(
         factory = ViewModelProvider.AndroidViewModelFactory(
             context.applicationContext as Application
         )
@@ -32,10 +32,7 @@ fun LoginScreen(
         verticalArrangement = Arrangement.Center
     ) {
 
-        Text(
-            text = "Login",
-            style = MaterialTheme.typography.headlineMedium
-        )
+        Text("Register", style = MaterialTheme.typography.headlineMedium)
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -56,28 +53,35 @@ fun LoginScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = viewModel.confirmPassword.value,
+            onValueChange = viewModel::onConfirmPasswordChange,
+            label = { Text("Confirm Password") },
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth()
+        )
+
         viewModel.error.value?.let {
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.error
-            )
+            Text(text = it, color = MaterialTheme.colorScheme.error)
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
         Button(
-            onClick = { viewModel.login(onLoginSuccess) },
+            onClick = { viewModel.register(onRegisterSuccess) },
             modifier = Modifier.fillMaxWidth(),
             enabled = !viewModel.isLoading.value
         ) {
-            Text("Login")
+            Text("Register")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        TextButton(onClick = onNavigateToRegister) {
-            Text("Don't have an account? Register")
+        TextButton(onClick = onNavigateToLogin) {
+            Text("Already have an account? Login")
         }
     }
 }

@@ -9,7 +9,7 @@ import com.vandoliak.coupleapp.data.remote.AuthRequest
 import com.vandoliak.coupleapp.data.remote.RetrofitInstance
 import kotlinx.coroutines.launch
 
-class LoginViewModel(app: Application) : AndroidViewModel(app) {
+class RegisterViewModel(app: Application) : AndroidViewModel(app) {
 
     private val tokenManager = TokenManager(app)
 
@@ -19,10 +19,13 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
     var password = mutableStateOf("")
         private set
 
-    var isLoading = mutableStateOf(false)
+    var confirmPassword = mutableStateOf("")
         private set
 
     var error = mutableStateOf<String?>(null)
+        private set
+
+    var isLoading = mutableStateOf(false)
         private set
 
     fun onEmailChange(value: String) {
@@ -33,13 +36,23 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
         password.value = value
     }
 
-    fun login(onSuccess: () -> Unit) {
+    fun onConfirmPasswordChange(value: String) {
+        confirmPassword.value = value
+    }
+
+    fun register(onSuccess: () -> Unit) {
         viewModelScope.launch {
             try {
-                isLoading.value = true
                 error.value = null
 
-                val response = RetrofitInstance.api.login(
+                if (password.value != confirmPassword.value) {
+                    error.value = "Passwords do not match"
+                    return@launch
+                }
+
+                isLoading.value = true
+
+                val response = RetrofitInstance.api.register(
                     AuthRequest(email.value, password.value)
                 )
 
@@ -51,7 +64,7 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
                         onSuccess()
                     }
                 } else {
-                    error.value = "Login failed"
+                    error.value = "Registration failed"
                 }
 
             } catch (e: Exception) {
