@@ -11,20 +11,37 @@ val Context.dataStore by preferencesDataStore("auth_prefs")
 class TokenManager(private val context: Context) {
 
     private val TOKEN_KEY = stringPreferencesKey("jwt_token")
+    private val PAIR_ID_KEY = stringPreferencesKey("pair_id")
 
     val tokenFlow = context.dataStore.data.map { prefs ->
         prefs[TOKEN_KEY]
     }
 
-    suspend fun saveToken(token: String) {
+    val pairIdFlow = context.dataStore.data.map { prefs ->
+        prefs[PAIR_ID_KEY]
+    }
+
+    suspend fun saveSession(token: String, pairId: String?) {
         context.dataStore.edit { prefs ->
             prefs[TOKEN_KEY] = token
+            if (pairId.isNullOrBlank()) {
+                prefs.remove(PAIR_ID_KEY)
+            } else {
+                prefs[PAIR_ID_KEY] = pairId
+            }
         }
     }
 
-    suspend fun clearToken() {
+    suspend fun savePairId(pairId: String) {
+        context.dataStore.edit { prefs ->
+            prefs[PAIR_ID_KEY] = pairId
+        }
+    }
+
+    suspend fun clearSession() {
         context.dataStore.edit { prefs ->
             prefs.remove(TOKEN_KEY)
+            prefs.remove(PAIR_ID_KEY)
         }
     }
 }

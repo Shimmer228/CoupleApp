@@ -14,7 +14,7 @@ import com.vandoliak.coupleapp.presentation.viewmodel.RegisterViewModel
 
 @Composable
 fun RegisterScreen(
-    onRegisterSuccess: () -> Unit,
+    onRegisterSuccess: (Boolean) -> Unit,
     onNavigateToLogin: () -> Unit
 ) {
     val context = LocalContext.current
@@ -75,7 +75,7 @@ fun RegisterScreen(
             modifier = Modifier.fillMaxWidth(),
             enabled = !viewModel.isLoading.value
         ) {
-            Text("Register")
+            Text(if (viewModel.isLoading.value) "Loading..." else "Register")
         }
 
         Spacer(modifier = Modifier.height(16.dp))

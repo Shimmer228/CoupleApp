@@ -7,8 +7,8 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitInstance {
 
+    //private const val BASE_URL = "http://10.0.2.2:5000/"
     private const val BASE_URL = "http://localhost:5000/"
-
     private val logging = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY
     }
@@ -17,12 +17,31 @@ object RetrofitInstance {
         .addInterceptor(logging)
         .build()
 
-    val api: AuthApi by lazy {
+    private val retrofit: Retrofit by lazy {
         Retrofit.Builder()
             .baseUrl(BASE_URL)
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
-            .create(AuthApi::class.java)
+    }
+
+    val authApi: AuthApi by lazy {
+        retrofit.create(AuthApi::class.java)
+    }
+
+    val pairApi: PairApi by lazy {
+        retrofit.create(PairApi::class.java)
+    }
+
+    val taskApi: TaskApi by lazy {
+        retrofit.create(TaskApi::class.java)
+    }
+
+    val eventApi: EventApi by lazy {
+        retrofit.create(EventApi::class.java)
+    }
+
+    val financeApi: FinanceApi by lazy {
+        retrofit.create(FinanceApi::class.java)
     }
 }

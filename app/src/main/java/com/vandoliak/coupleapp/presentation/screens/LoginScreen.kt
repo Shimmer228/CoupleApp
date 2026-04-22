@@ -14,7 +14,7 @@ import com.vandoliak.coupleapp.presentation.viewmodel.LoginViewModel
 
 @Composable
 fun LoginScreen(
-    onLoginSuccess: () -> Unit,
+    onLoginSuccess: (Boolean) -> Unit,
     onNavigateToRegister: () -> Unit
 ) {
     val context = LocalContext.current
@@ -71,7 +71,7 @@ fun LoginScreen(
             modifier = Modifier.fillMaxWidth(),
             enabled = !viewModel.isLoading.value
         ) {
-            Text("Login")
+            Text(if (viewModel.isLoading.value) "Loading..." else "Login")
         }
 
         Spacer(modifier = Modifier.height(16.dp))

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.vandoliak.coupleapp.data.local.TokenManager
 import com.vandoliak.coupleapp.data.remote.AuthRequest
 import com.vandoliak.coupleapp.data.remote.RetrofitInstance
+import com.vandoliak.coupleapp.data.remote.extractErrorMessage
 import kotlinx.coroutines.launch
 
 class RegisterViewModel(app: Application) : AndroidViewModel(app) {
@@ -40,10 +41,15 @@ class RegisterViewModel(app: Application) : AndroidViewModel(app) {
         confirmPassword.value = value
     }
 
-    fun register(onSuccess: () -> Unit) {
+    fun register(onSuccess: (Boolean) -> Unit) {
         viewModelScope.launch {
             try {
                 error.value = null
+
+                if (email.value.isBlank() || password.value.isBlank() || confirmPassword.value.isBlank()) {
+                    error.value = "All fields are required"
+                    return@launch
+                }
 
                 if (password.value != confirmPassword.value) {
                     error.value = "Passwords do not match"
@@ -52,19 +58,22 @@ class RegisterViewModel(app: Application) : AndroidViewModel(app) {
 
                 isLoading.value = true
 
-                val response = RetrofitInstance.api.register(
+                val response = RetrofitInstance.authApi.register(
                     AuthRequest(email.value, password.value)
                 )
 
                 if (response.isSuccessful) {
-                    val token = response.body()?.token
+                    val authResponse = response.body()
+                    val token = authResponse?.token
 
                     token?.let {
-                        tokenManager.saveToken(it)
-                        onSuccess()
+                        tokenManager.saveSession(it, authResponse.user.pairId)
+                        onSuccess(!authResponse.user.pairId.isNullOrBlank())
+                    } ?: run {
+                        error.value = "Server returned an empty response"
                     }
                 } else {
-                    error.value = "Registration failed"
+                    error.value = response.extractErrorMessage("Registration failed")
                 }
 
             } catch (e: Exception) {

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.vandoliak.coupleapp.data.local.TokenManager
 import com.vandoliak.coupleapp.data.remote.AuthRequest
 import com.vandoliak.coupleapp.data.remote.RetrofitInstance
+import com.vandoliak.coupleapp.data.remote.extractErrorMessage
 import kotlinx.coroutines.launch
 
 class LoginViewModel(app: Application) : AndroidViewModel(app) {
@@ -33,25 +34,33 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
         password.value = value
     }
 
-    fun login(onSuccess: () -> Unit) {
+    fun login(onSuccess: (Boolean) -> Unit) {
         viewModelScope.launch {
             try {
+                if (email.value.isBlank() || password.value.isBlank()) {
+                    error.value = "Email and password are required"
+                    return@launch
+                }
+
                 isLoading.value = true
                 error.value = null
 
-                val response = RetrofitInstance.api.login(
+                val response = RetrofitInstance.authApi.login(
                     AuthRequest(email.value, password.value)
                 )
 
                 if (response.isSuccessful) {
-                    val token = response.body()?.token
+                    val authResponse = response.body()
+                    val token = authResponse?.token
 
                     token?.let {
-                        tokenManager.saveToken(it)
-                        onSuccess()
+                        tokenManager.saveSession(it, authResponse.user.pairId)
+                        onSuccess(!authResponse.user.pairId.isNullOrBlank())
+                    } ?: run {
+                        error.value = "Server returned an empty response"
                     }
                 } else {
-                    error.value = "Login failed"
+                    error.value = response.extractErrorMessage("Login failed")
                 }
 
             } catch (e: Exception) {
