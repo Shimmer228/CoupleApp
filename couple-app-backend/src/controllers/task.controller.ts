@@ -4,7 +4,7 @@ import { prisma } from "../config/prisma";
 import { AuthenticatedRequest } from "../types/auth-request";
 import { parseOptionalDate } from "../utils/date";
 
-const taskDetailsInclude = {
+export const taskDetailsInclude = {
   createdBy: {
     select: {
       id: true,
@@ -12,6 +12,12 @@ const taskDetailsInclude = {
     },
   },
   assignedTo: {
+    select: {
+      id: true,
+      email: true,
+    },
+  },
+  completionRequestedBy: {
     select: {
       id: true,
       email: true,
@@ -25,7 +31,30 @@ const taskOrderBy = {
 
 const normalizeTitle = (value: string) => value.trim();
 
-const getActionableContext = async (tx: Prisma.TransactionClient, userId: string, taskId: string) => {
+const taskContextSelect = {
+  id: true,
+  title: true,
+  bank: true,
+  status: true,
+  pairId: true,
+  assignedToId: true,
+  createdById: true,
+  completionRequestedById: true,
+} satisfies Prisma.TaskSelect;
+
+type TaskCreationInput = {
+  userId: string;
+  title: string;
+  points: number;
+  dueDate: Date | null;
+};
+
+type PairUser = {
+  id: string;
+  email: string;
+};
+
+const getUserContext = async (tx: Prisma.TransactionClient, userId: string) => {
   const user = await tx.user.findUnique({
     where: { id: userId },
     select: {
@@ -43,23 +72,49 @@ const getActionableContext = async (tx: Prisma.TransactionClient, userId: string
     throw new Error("PAIR_REQUIRED");
   }
 
-  const task = await tx.task.findUnique({
-    where: { id: taskId },
+  return user;
+};
+
+const getPairUsers = async (tx: Prisma.TransactionClient, pairId: string) => {
+  const pairUsers = await tx.user.findMany({
+    where: { pairId },
     select: {
       id: true,
-      title: true,
-      bank: true,
-      status: true,
-      pairId: true,
-      assignedToId: true,
-      createdById: true,
+      email: true,
     },
   });
 
-  if (!task || task.pairId !== user.pairId) {
+  if (pairUsers.length !== 2) {
+    throw new Error("PARTNER_REQUIRED");
+  }
+
+  return pairUsers;
+};
+
+const getTaskForPair = async (tx: Prisma.TransactionClient, taskId: string, pairId: string) => {
+  const task = await tx.task.findUnique({
+    where: { id: taskId },
+    select: taskContextSelect,
+  });
+
+  if (!task || task.pairId !== pairId) {
     throw new Error("TASK_NOT_FOUND");
   }
 
+  return task;
+};
+
+const getPartner = (pairUsers: PairUser[], userId: string) => {
+  const partner = pairUsers.find((pairUser) => pairUser.id !== userId);
+
+  if (!partner) {
+    throw new Error("PARTNER_REQUIRED");
+  }
+
+  return partner;
+};
+
+const ensureAssignedUserCanAct = (task: Prisma.TaskGetPayload<{ select: typeof taskContextSelect }>, userId: string) => {
   if (task.status !== TaskStatus.ACTIVE) {
     throw new Error("TASK_NOT_ACTIVE");
   }
@@ -67,22 +122,59 @@ const getActionableContext = async (tx: Prisma.TransactionClient, userId: string
   if (task.assignedToId !== userId) {
     throw new Error("FORBIDDEN_ACTION");
   }
+};
 
-  const pairUsers = await tx.user.findMany({
-    where: { pairId: user.pairId },
+const ensureCreatorCanModify = (task: Prisma.TaskGetPayload<{ select: typeof taskContextSelect }>, userId: string) => {
+  if (task.createdById !== userId) {
+    throw new Error("FORBIDDEN_CREATOR_ACTION");
+  }
+
+  if (task.status !== TaskStatus.ACTIVE) {
+    throw new Error("TASK_NOT_EDITABLE");
+  }
+};
+
+export const createTaskForUser = async (tx: Prisma.TransactionClient, input: TaskCreationInput) => {
+  const { userId, title, points, dueDate } = input;
+  const user = await getUserContext(tx, userId);
+  const pairUsers = await getPairUsers(tx, user.pairId!);
+
+  if (user.points < points) {
+    throw new Error("INSUFFICIENT_POINTS");
+  }
+
+  const partner = getPartner(pairUsers, userId);
+
+  const updatedUser = await tx.user.update({
+    where: { id: userId },
+    data: {
+      points: {
+        decrement: points,
+      },
+    },
     select: {
-      id: true,
-      email: true,
+      points: true,
     },
   });
 
-  const opponent = pairUsers.find((pairUser) => pairUser.id !== userId);
+  const task = await tx.task.create({
+    data: {
+      title,
+      bank: points,
+      status: TaskStatus.ACTIVE,
+      assignedToId: partner.id,
+      createdById: userId,
+      completionRequestedById: null,
+      pairId: user.pairId!,
+      dueDate,
+    },
+    include: taskDetailsInclude,
+  });
 
-  if (!opponent) {
-    throw new Error("PARTNER_REQUIRED");
-  }
-
-  return { user, task, opponent };
+  return {
+    task,
+    currentUserPoints: updatedUser.points,
+  };
 };
 
 const sendTaskError = (res: Response, error: unknown) => {
@@ -100,11 +192,31 @@ const sendTaskError = (res: Response, error: unknown) => {
     }
 
     if (error.message === "TASK_NOT_ACTIVE") {
-      return res.status(400).json({ message: "Only active tasks can be updated" });
+      return res.status(400).json({ message: "Only active tasks can be changed this way" });
+    }
+
+    if (error.message === "TASK_NOT_EDITABLE") {
+      return res.status(400).json({ message: "Only active tasks can be edited or deleted" });
+    }
+
+    if (error.message === "WAITING_CONFIRMATION_REQUIRED") {
+      return res.status(400).json({ message: "Task must be waiting for confirmation" });
+    }
+
+    if (error.message === "COMPLETION_REQUEST_REQUIRED") {
+      return res.status(400).json({ message: "Task does not have a pending completion request" });
     }
 
     if (error.message === "FORBIDDEN_ACTION") {
       return res.status(403).json({ message: "Only the assigned user can respond to this task" });
+    }
+
+    if (error.message === "FORBIDDEN_CREATOR_ACTION") {
+      return res.status(403).json({ message: "Only the task creator can edit or delete this task" });
+    }
+
+    if (error.message === "FORBIDDEN_CONFIRMATION") {
+      return res.status(403).json({ message: "Only the other partner can confirm or reject completion" });
     }
 
     if (error.message === "PARTNER_REQUIRED") {
@@ -117,6 +229,10 @@ const sendTaskError = (res: Response, error: unknown) => {
 
     if (error.message === "INVALID_DATE") {
       return res.status(400).json({ message: "Invalid due date format" });
+    }
+
+    if (error.message === "TASK_UPDATE_REQUIRED") {
+      return res.status(400).json({ message: "Provide a title or due date to update" });
     }
   }
 
@@ -184,72 +300,14 @@ export const createTask = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(400).json({ message: "Points must be a positive integer" });
     }
 
-    const result = await prisma.$transaction(async (tx) => {
-      const user = await tx.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          pairId: true,
-          points: true,
-        },
-      });
-
-      if (!user) {
-        throw new Error("USER_NOT_FOUND");
-      }
-
-      if (!user.pairId) {
-        throw new Error("PAIR_REQUIRED");
-      }
-
-      if (user.points < points) {
-        throw new Error("INSUFFICIENT_POINTS");
-      }
-
-      const pairUsers = await tx.user.findMany({
-        where: { pairId: user.pairId },
-        select: {
-          id: true,
-          email: true,
-        },
-      });
-
-      const partner = pairUsers.find((pairUser) => pairUser.id !== userId);
-
-      if (!partner || pairUsers.length !== 2) {
-        throw new Error("PARTNER_REQUIRED");
-      }
-
-      const updatedUser = await tx.user.update({
-        where: { id: userId },
-        data: {
-          points: {
-            decrement: points,
-          },
-        },
-        select: {
-          points: true,
-        },
-      });
-
-      const task = await tx.task.create({
-        data: {
-          title,
-          bank: points,
-          status: TaskStatus.ACTIVE,
-          assignedToId: partner.id,
-          createdById: userId,
-          pairId: user.pairId,
-          dueDate,
-        },
-        include: taskDetailsInclude,
-      });
-
-      return {
-        task,
-        currentUserPoints: updatedUser.points,
-      };
-    });
+    const result = await prisma.$transaction((tx) =>
+      createTaskForUser(tx, {
+        userId,
+        title,
+        points,
+        dueDate,
+      })
+    );
 
     return res.status(201).json(result);
   } catch (error) {
@@ -257,7 +315,55 @@ export const createTask = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const completeTask = async (req: AuthenticatedRequest, res: Response) => {
+export const updateTask = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const taskId = String(req.params.id ?? "");
+    const hasTitle = Object.prototype.hasOwnProperty.call(req.body, "title");
+    const hasDueDate = Object.prototype.hasOwnProperty.call(req.body, "dueDate");
+    const title = hasTitle ? normalizeTitle(String(req.body.title ?? "")) : undefined;
+    const dueDate = hasDueDate ? parseOptionalDate(req.body.dueDate) : undefined;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (!hasTitle && !hasDueDate) {
+      throw new Error("TASK_UPDATE_REQUIRED");
+    }
+
+    if (hasTitle && !title) {
+      return res.status(400).json({ message: "Task title is required" });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await getUserContext(tx, userId);
+      const task = await getTaskForPair(tx, taskId, user.pairId!);
+
+      ensureCreatorCanModify(task, userId);
+
+      const updatedTask = await tx.task.update({
+        where: { id: task.id },
+        data: {
+          ...(hasTitle ? { title } : {}),
+          ...(hasDueDate ? { dueDate: dueDate ?? null } : {}),
+        },
+        include: taskDetailsInclude,
+      });
+
+      return {
+        task: updatedTask,
+        currentUserPoints: user.points,
+      };
+    });
+
+    return res.json(result);
+  } catch (error) {
+    return sendTaskError(res, error);
+  }
+};
+
+export const deleteTask = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId;
     const taskId = String(req.params.id ?? "");
@@ -267,7 +373,10 @@ export const completeTask = async (req: AuthenticatedRequest, res: Response) => 
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const { task } = await getActionableContext(tx, userId, taskId);
+      const user = await getUserContext(tx, userId);
+      const task = await getTaskForPair(tx, taskId, user.pairId!);
+
+      ensureCreatorCanModify(task, userId);
 
       const updatedUser = await tx.user.update({
         where: { id: userId },
@@ -281,17 +390,162 @@ export const completeTask = async (req: AuthenticatedRequest, res: Response) => 
         },
       });
 
+      await tx.task.delete({
+        where: { id: task.id },
+      });
+
+      return {
+        deletedId: task.id,
+        currentUserPoints: updatedUser.points,
+      };
+    });
+
+    return res.json(result);
+  } catch (error) {
+    return sendTaskError(res, error);
+  }
+};
+
+export const requestCompletion = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const taskId = String(req.params.id ?? "");
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await getUserContext(tx, userId);
+      const task = await getTaskForPair(tx, taskId, user.pairId!);
+
+      ensureAssignedUserCanAct(task, userId);
+
       const updatedTask = await tx.task.update({
         where: { id: task.id },
         data: {
-          status: TaskStatus.COMPLETED,
+          status: TaskStatus.WAITING_CONFIRMATION,
+          completionRequestedById: userId,
         },
         include: taskDetailsInclude,
       });
 
       return {
         task: updatedTask,
-        currentUserPoints: updatedUser.points,
+        currentUserPoints: user.points,
+      };
+    });
+
+    return res.json(result);
+  } catch (error) {
+    return sendTaskError(res, error);
+  }
+};
+
+export const confirmCompletion = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const taskId = String(req.params.id ?? "");
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await getUserContext(tx, userId);
+      const task = await getTaskForPair(tx, taskId, user.pairId!);
+
+      if (task.status !== TaskStatus.WAITING_CONFIRMATION) {
+        throw new Error("WAITING_CONFIRMATION_REQUIRED");
+      }
+
+      if (!task.completionRequestedById) {
+        throw new Error("COMPLETION_REQUEST_REQUIRED");
+      }
+
+      if (task.completionRequestedById === userId || task.assignedToId === userId) {
+        throw new Error("FORBIDDEN_CONFIRMATION");
+      }
+
+      await getPairUsers(tx, user.pairId!);
+
+      await tx.user.update({
+        where: { id: task.completionRequestedById },
+        data: {
+          points: {
+            increment: task.bank,
+          },
+          winStreak: {
+            increment: 1,
+          },
+        },
+      });
+
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          winStreak: 0,
+        },
+      });
+
+      const updatedTask = await tx.task.update({
+        where: { id: task.id },
+        data: {
+          status: TaskStatus.COMPLETED,
+          completionRequestedById: null,
+        },
+        include: taskDetailsInclude,
+      });
+
+      return {
+        task: updatedTask,
+        currentUserPoints: user.points,
+      };
+    });
+
+    return res.json(result);
+  } catch (error) {
+    return sendTaskError(res, error);
+  }
+};
+
+export const rejectCompletion = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const taskId = String(req.params.id ?? "");
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await getUserContext(tx, userId);
+      const task = await getTaskForPair(tx, taskId, user.pairId!);
+
+      if (task.status !== TaskStatus.WAITING_CONFIRMATION) {
+        throw new Error("WAITING_CONFIRMATION_REQUIRED");
+      }
+
+      if (!task.completionRequestedById) {
+        throw new Error("COMPLETION_REQUEST_REQUIRED");
+      }
+
+      if (task.completionRequestedById === userId || task.assignedToId === userId) {
+        throw new Error("FORBIDDEN_CONFIRMATION");
+      }
+
+      const updatedTask = await tx.task.update({
+        where: { id: task.id },
+        data: {
+          status: TaskStatus.ACTIVE,
+          completionRequestedById: null,
+        },
+        include: taskDetailsInclude,
+      });
+
+      return {
+        task: updatedTask,
+        currentUserPoints: user.points,
       };
     });
 
@@ -311,12 +565,17 @@ export const returnTask = async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const { user, task, opponent } = await getActionableContext(tx, userId, taskId);
+      const user = await getUserContext(tx, userId);
+      const pairUsers = await getPairUsers(tx, user.pairId!);
+      const task = await getTaskForPair(tx, taskId, user.pairId!);
+
+      ensureAssignedUserCanAct(task, userId);
 
       if (user.points < task.bank) {
         throw new Error("INSUFFICIENT_POINTS");
       }
 
+      const partner = getPartner(pairUsers, userId);
       const updatedUser = await tx.user.update({
         where: { id: userId },
         data: {
@@ -335,7 +594,8 @@ export const returnTask = async (req: AuthenticatedRequest, res: Response) => {
           bank: {
             increment: task.bank,
           },
-          assignedToId: opponent.id,
+          assignedToId: partner.id,
+          completionRequestedById: null,
         },
         include: taskDetailsInclude,
       });
@@ -362,18 +622,24 @@ export const failTask = async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const { user, task, opponent } = await getActionableContext(tx, userId, taskId);
+      const user = await getUserContext(tx, userId);
+      const pairUsers = await getPairUsers(tx, user.pairId!);
+      const task = await getTaskForPair(tx, taskId, user.pairId!);
+
+      ensureAssignedUserCanAct(task, userId);
 
       if (user.points < task.bank) {
         throw new Error("INSUFFICIENT_POINTS");
       }
 
+      const partner = getPartner(pairUsers, userId);
       const updatedUser = await tx.user.update({
         where: { id: userId },
         data: {
           points: {
             decrement: task.bank,
           },
+          winStreak: 0,
         },
         select: {
           points: true,
@@ -381,10 +647,13 @@ export const failTask = async (req: AuthenticatedRequest, res: Response) => {
       });
 
       await tx.user.update({
-        where: { id: opponent.id },
+        where: { id: partner.id },
         data: {
           points: {
             increment: task.bank,
+          },
+          winStreak: {
+            increment: 1,
           },
         },
       });
@@ -393,6 +662,7 @@ export const failTask = async (req: AuthenticatedRequest, res: Response) => {
         where: { id: task.id },
         data: {
           status: TaskStatus.FAILED,
+          completionRequestedById: null,
         },
         include: taskDetailsInclude,
       });

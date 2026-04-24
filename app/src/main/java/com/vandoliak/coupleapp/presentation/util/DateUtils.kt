@@ -2,12 +2,16 @@ package com.vandoliak.coupleapp.presentation.util
 
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 private val apiDateFormatter: DateTimeFormatter = DateTimeFormatter.ISO_INSTANT
 
 fun todayDateInput(): String = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+
+fun todayLocalDate(): LocalDate = LocalDate.now()
 
 fun sanitizeDateInput(value: String): String {
     return buildString {
@@ -29,6 +33,10 @@ fun parseDateInput(value: String): LocalDate? {
 
 fun dateInputToApiDate(value: String): String? {
     val localDate = parseDateInput(value) ?: return null
+    return localDateToApiDate(localDate)
+}
+
+fun localDateToApiDate(localDate: LocalDate): String {
     val instant = localDate
         .atTime(12, 0)
         .toInstant(ZoneOffset.UTC)
@@ -37,18 +45,14 @@ fun dateInputToApiDate(value: String): String? {
 }
 
 fun isoDateMatchesSelectedDay(isoDate: String?, selectedDate: LocalDate): Boolean {
-    if (isoDate.isNullOrBlank()) {
-        return false
-    }
-
-    return try {
-        Instant.parse(isoDate).atZone(ZoneOffset.UTC).toLocalDate() == selectedDate
-    } catch (_: Exception) {
-        false
-    }
+    return isoDateToLocalDate(isoDate) == selectedDate
 }
 
 fun formatIsoDateForDisplay(isoDate: String?): String? {
+    return isoDateToLocalDate(isoDate)?.format(DateTimeFormatter.ISO_LOCAL_DATE)
+}
+
+fun isoDateToLocalDate(isoDate: String?): LocalDate? {
     if (isoDate.isNullOrBlank()) {
         return null
     }
@@ -57,8 +61,19 @@ fun formatIsoDateForDisplay(isoDate: String?): String? {
         Instant.parse(isoDate)
             .atZone(ZoneOffset.UTC)
             .toLocalDate()
-            .format(DateTimeFormatter.ISO_LOCAL_DATE)
     } catch (_: Exception) {
         null
     }
+}
+
+fun formatMonthTitle(yearMonth: YearMonth): String {
+    return yearMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))
+}
+
+fun formatFullDate(localDate: LocalDate): String {
+    return localDate.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault()))
+}
+
+fun toDateInput(localDate: LocalDate): String {
+    return localDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
 }

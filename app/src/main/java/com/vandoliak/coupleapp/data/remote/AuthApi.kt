@@ -18,7 +18,10 @@ data class UserDto(
     val id: String,
     val email: String,
     val pairId: String?,
-    val points: Int
+    val points: Int,
+    val nickname: String?,
+    val avatarKey: String?,
+    val winStreak: Int
 )
 
 interface AuthApi {

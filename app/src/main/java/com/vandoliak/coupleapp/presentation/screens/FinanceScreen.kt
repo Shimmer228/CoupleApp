@@ -10,9 +10,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -25,14 +22,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vandoliak.coupleapp.data.remote.TransactionDto
+import com.vandoliak.coupleapp.presentation.components.AppCard
+import com.vandoliak.coupleapp.presentation.components.EmptyState
+import com.vandoliak.coupleapp.presentation.components.PrimaryActionButton
+import com.vandoliak.coupleapp.presentation.components.SectionTitle
 import com.vandoliak.coupleapp.presentation.viewmodel.FinanceViewModel
 import java.util.Locale
 
 @Composable
 fun FinanceScreen(
-    onNavigateHome: () -> Unit,
-    onNavigateToTasks: () -> Unit,
-    onNavigateToCalendar: () -> Unit
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val viewModel: FinanceViewModel = viewModel(
@@ -46,55 +45,22 @@ fun FinanceScreen(
     }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
             .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "Finance",
-            style = MaterialTheme.typography.headlineMedium
+        SectionTitle(
+            title = "Shared Finance",
+            subtitle = "Track what is shared, owed, and already settled."
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        OutlinedButton(
-            onClick = onNavigateHome,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Home")
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(
-            onClick = onNavigateToTasks,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Tasks")
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(
-            onClick = onNavigateToCalendar,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Calendar")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+        AppCard {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Current Balance",
-                    style = MaterialTheme.typography.titleLarge
+                    text = "Current balance",
+                    style = MaterialTheme.typography.titleMedium
                 )
 
                 val balanceText = if (viewModel.balance.value == 0.0) {
@@ -107,24 +73,14 @@ fun FinanceScreen(
 
                 Text(
                     text = balanceText,
-                    style = MaterialTheme.typography.bodyLarge
+                    style = MaterialTheme.typography.titleLarge
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Add Transaction",
-                    style = MaterialTheme.typography.titleLarge
-                )
+        AppCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle(title = "Add Transaction")
 
                 OutlinedTextField(
                     value = viewModel.title.value,
@@ -187,18 +143,15 @@ fun FinanceScreen(
                     Text(if (viewModel.category.value == "SHARED") "Shared Selected" else "Shared")
                 }
 
-                Button(
+                PrimaryActionButton(
+                    text = if (viewModel.isSubmitting.value) "Saving..." else "Add Transaction",
                     onClick = viewModel::createTransaction,
-                    modifier = Modifier.fillMaxWidth(),
                     enabled = !viewModel.isSubmitting.value
-                ) {
-                    Text(if (viewModel.isSubmitting.value) "Loading..." else "Add Transaction")
-                }
+                )
             }
         }
 
         viewModel.error.value?.let {
-            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = it,
                 color = MaterialTheme.colorScheme.error
@@ -206,54 +159,41 @@ fun FinanceScreen(
         }
 
         viewModel.successMessage.value?.let {
-            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = it,
                 color = MaterialTheme.colorScheme.primary
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        SectionTitle(title = "Recent Activity")
 
         if (viewModel.isLoading.value && viewModel.transactions.value.isEmpty()) {
-            CircularProgressIndicator()
+            EmptyState(
+                title = "Loading finance",
+                subtitle = "Pulling the latest transactions and balance."
+            )
+        } else if (viewModel.transactions.value.isEmpty()) {
+            EmptyState(
+                title = "No transactions yet",
+                subtitle = "Add the first shared expense or income entry."
+            )
         } else {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (viewModel.transactions.value.isEmpty()) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "No transactions yet.",
-                            modifier = Modifier.padding(16.dp)
-                        )
-                    }
-                }
-
-                viewModel.transactions.value.forEach { transaction ->
-                    FinanceItem(transaction)
-                }
+            viewModel.transactions.value.forEach { transaction ->
+                FinanceItem(transaction)
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(8.dp))
     }
 }
 
 @Composable
 private fun FinanceItem(transaction: TransactionDto) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
+    AppCard {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = transaction.title,
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleMedium
             )
             Text(text = "Amount: ${formatAmount(transaction.amount)}")
             Text(text = "Type: ${transaction.type.lowercase().replaceFirstChar { it.uppercase() }}")

@@ -44,4 +44,20 @@ object RetrofitInstance {
     val financeApi: FinanceApi by lazy {
         retrofit.create(FinanceApi::class.java)
     }
+
+    val wishlistApi: WishlistApi by lazy {
+        retrofit.create(WishlistApi::class.java)
+    }
+
+    val profileApi: ProfileApi by lazy {
+        retrofit.create(ProfileApi::class.java)
+    }
+
+    val rewardApi: RewardApi by lazy {
+        retrofit.create(RewardApi::class.java)
+    }
+
+    val blueprintApi: BlueprintApi by lazy {
+        retrofit.create(BlueprintApi::class.java)
+    }
 }

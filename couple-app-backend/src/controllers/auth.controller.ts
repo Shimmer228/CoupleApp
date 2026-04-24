@@ -3,11 +3,22 @@ import bcrypt from "bcrypt";
 import { prisma } from "../config/prisma";
 import { generateToken } from "../utils/jwt";
 
-const sanitizeUser = (user: { id: string; email: string; pairId: string | null; points: number }) => ({
+const sanitizeUser = (user: {
+  id: string;
+  email: string;
+  pairId: string | null;
+  points: number;
+  nickname: string | null;
+  avatarKey: string | null;
+  winStreak: number;
+}) => ({
   id: user.id,
   email: user.email,
   pairId: user.pairId,
   points: user.points,
+  nickname: user.nickname,
+  avatarKey: user.avatarKey,
+  winStreak: user.winStreak,
 });
 
 export const register = async (req: Request, res: Response) => {
@@ -37,6 +48,9 @@ export const register = async (req: Request, res: Response) => {
         email: true,
         pairId: true,
         points: true,
+        nickname: true,
+        avatarKey: true,
+        winStreak: true,
       },
     });
 

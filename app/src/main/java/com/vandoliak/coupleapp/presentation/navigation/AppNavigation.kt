@@ -2,15 +2,15 @@ package com.vandoliak.coupleapp.presentation.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.navigation.compose.*
-import com.vandoliak.coupleapp.presentation.screens.CalendarScreen
-import com.vandoliak.coupleapp.presentation.screens.FinanceScreen
-import com.vandoliak.coupleapp.presentation.screens.LoginScreen
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.vandoliak.coupleapp.presentation.screens.HomeScreen
+import com.vandoliak.coupleapp.presentation.screens.LoginScreen
 import com.vandoliak.coupleapp.presentation.screens.PairScreen
-import com.vandoliak.coupleapp.presentation.screens.SplashScreen
 import com.vandoliak.coupleapp.presentation.screens.RegisterScreen
-import com.vandoliak.coupleapp.presentation.screens.TaskScreen
+import com.vandoliak.coupleapp.presentation.screens.ShopScreen
+import com.vandoliak.coupleapp.presentation.screens.SplashScreen
 
 @Composable
 fun AppNavigation(
@@ -30,6 +30,7 @@ fun AppNavigation(
                 }
             }
         }
+
         composable("register") {
             RegisterScreen(
                 onRegisterSuccess = { hasPair ->
@@ -42,6 +43,7 @@ fun AppNavigation(
                 }
             )
         }
+
         composable("login") {
             LoginScreen(
                 onLoginSuccess = { hasPair ->
@@ -67,56 +69,16 @@ fun AppNavigation(
 
         composable("home") {
             HomeScreen(
-                onNavigateToTasks = {
-                    navController.navigate("tasks")
-                },
-                onNavigateToCalendar = {
-                    navController.navigate("calendar")
-                },
-                onNavigateToFinance = {
-                    navController.navigate("finance")
+                onNavigateToShop = {
+                    navController.navigate("shop")
                 }
             )
         }
 
-        composable("tasks") {
-            TaskScreen(
-                onNavigateToCalendar = {
-                    navController.navigate("calendar")
-                },
-                onNavigateHome = {
-                    navController.navigate("home")
-                },
-                onNavigateToFinance = {
-                    navController.navigate("finance")
-                }
-            )
-        }
-
-        composable("calendar") {
-            CalendarScreen(
-                onNavigateToTasks = {
-                    navController.navigate("tasks")
-                },
-                onNavigateHome = {
-                    navController.navigate("home")
-                },
-                onNavigateToFinance = {
-                    navController.navigate("finance")
-                }
-            )
-        }
-
-        composable("finance") {
-            FinanceScreen(
-                onNavigateHome = {
-                    navController.navigate("home")
-                },
-                onNavigateToTasks = {
-                    navController.navigate("tasks")
-                },
-                onNavigateToCalendar = {
-                    navController.navigate("calendar")
+        composable("shop") {
+            ShopScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }

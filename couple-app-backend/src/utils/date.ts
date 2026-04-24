@@ -38,3 +38,34 @@ export const getDayRange = (dateInput: string) => {
 
   return { start, end };
 };
+
+export const parseOptionalTime = (value: unknown) => {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(normalized)) {
+    throw new Error("INVALID_TIME");
+  }
+
+  return normalized;
+};
+
+export const createDateForDayAndTime = (dateInput: string, timeInput?: string | null) => {
+  const normalized = dateInput.trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    throw new Error("INVALID_DATE_QUERY");
+  }
+
+  const time = parseOptionalTime(timeInput) ?? "12:00";
+  const date = new Date(`${normalized}T${time}:00.000Z`);
+
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("INVALID_DATE_QUERY");
+  }
+
+  return date;
+};

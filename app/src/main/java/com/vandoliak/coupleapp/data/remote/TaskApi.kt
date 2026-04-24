@@ -2,15 +2,22 @@ package com.vandoliak.coupleapp.data.remote
 
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 
 data class TaskCreateRequest(
     val title: String,
     val points: Int,
     val dueDate: String?
+)
+
+data class TaskUpdateRequest(
+    val title: String? = null,
+    val dueDate: String? = null
 )
 
 data class TaskUserDto(
@@ -25,6 +32,7 @@ data class TaskDto(
     val status: String,
     val assignedTo: TaskUserDto,
     val createdBy: TaskUserDto,
+    val completionRequestedBy: TaskUserDto?,
     val dueDate: String?,
     val createdAt: String
 )
@@ -37,6 +45,11 @@ data class TaskListResponse(
 
 data class TaskActionResponse(
     val task: TaskDto,
+    val currentUserPoints: Int
+)
+
+data class TaskDeleteResponse(
+    val deletedId: String,
     val currentUserPoints: Int
 )
 
@@ -53,8 +66,33 @@ interface TaskApi {
         @Body request: TaskCreateRequest
     ): Response<TaskActionResponse>
 
-    @POST("api/tasks/complete/{id}")
-    suspend fun completeTask(
+    @PUT("api/tasks/{id}")
+    suspend fun updateTask(
+        @Header("Authorization") authorization: String,
+        @Path("id") taskId: String,
+        @Body request: TaskUpdateRequest
+    ): Response<TaskActionResponse>
+
+    @DELETE("api/tasks/{id}")
+    suspend fun deleteTask(
+        @Header("Authorization") authorization: String,
+        @Path("id") taskId: String
+    ): Response<TaskDeleteResponse>
+
+    @POST("api/tasks/request-completion/{id}")
+    suspend fun requestCompletion(
+        @Header("Authorization") authorization: String,
+        @Path("id") taskId: String
+    ): Response<TaskActionResponse>
+
+    @POST("api/tasks/confirm-completion/{id}")
+    suspend fun confirmCompletion(
+        @Header("Authorization") authorization: String,
+        @Path("id") taskId: String
+    ): Response<TaskActionResponse>
+
+    @POST("api/tasks/reject-completion/{id}")
+    suspend fun rejectCompletion(
         @Header("Authorization") authorization: String,
         @Path("id") taskId: String
     ): Response<TaskActionResponse>

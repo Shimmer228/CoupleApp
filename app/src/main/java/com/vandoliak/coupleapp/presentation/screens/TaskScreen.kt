@@ -11,9 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -22,22 +19,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vandoliak.coupleapp.data.remote.TaskDto
+import com.vandoliak.coupleapp.presentation.components.AppCard
+import com.vandoliak.coupleapp.presentation.components.EmptyState
+import com.vandoliak.coupleapp.presentation.components.PrimaryActionButton
+import com.vandoliak.coupleapp.presentation.components.SectionTitle
 import com.vandoliak.coupleapp.presentation.util.formatIsoDateForDisplay
 import com.vandoliak.coupleapp.presentation.viewmodel.TaskViewModel
 
 @Composable
 fun TaskScreen(
-    onNavigateToCalendar: () -> Unit,
-    onNavigateHome: () -> Unit,
-    onNavigateToFinance: () -> Unit
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-
     val viewModel: TaskViewModel = viewModel(
         factory = ViewModelProvider.AndroidViewModelFactory(
             context.applicationContext as Application
@@ -48,64 +47,42 @@ fun TaskScreen(
         viewModel.loadTasks()
     }
 
+    val currentUserId = viewModel.currentUserId.value
+    val tasks = viewModel.tasks.value
+    val assignedToMe = tasks.filter { it.status == "ACTIVE" && it.assignedTo.id == currentUserId }
+    val createdByMe = tasks.filter { it.status == "ACTIVE" && it.createdBy.id == currentUserId }
+    val waitingForPartner = tasks.filter { it.status == "WAITING_CONFIRMATION" && it.completionRequestedBy?.id == currentUserId }
+    val waitingForMyDecision = tasks.filter { it.status == "WAITING_CONFIRMATION" && it.completionRequestedBy?.id != currentUserId }
+    val history = tasks.filter { it.status == "COMPLETED" || it.status == "FAILED" }
+
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
             .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "Task Arena",
-            style = MaterialTheme.typography.headlineMedium
+        SectionTitle(
+            title = "Arena",
+            subtitle = "Manage live challenges while Calendar stays your planning view."
         )
 
-        Text(
-            text = "Your points: ${viewModel.currentUserPoints.value}",
-            modifier = Modifier.padding(top = 8.dp),
-            style = MaterialTheme.typography.titleMedium
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        OutlinedButton(
-            onClick = onNavigateHome,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Home")
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(
-            onClick = onNavigateToCalendar,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Calendar")
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(
-            onClick = onNavigateToFinance,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Finance")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
+        AppCard {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Create Challenge",
-                    style = MaterialTheme.typography.titleLarge
+                    text = "Your points: ${viewModel.currentUserPoints.value}",
+                    style = MaterialTheme.typography.titleMedium
                 )
+                Text(
+                    text = "Create a challenge, track what is assigned to you, and confirm partner wins.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
 
-                Spacer(modifier = Modifier.height(12.dp))
+        AppCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle(title = "Create Challenge")
 
                 OutlinedTextField(
                     value = viewModel.taskTitle.value,
@@ -114,8 +91,6 @@ fun TaskScreen(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !viewModel.isSubmitting.value
                 )
-
-                Spacer(modifier = Modifier.height(12.dp))
 
                 OutlinedTextField(
                     value = viewModel.taskPoints.value,
@@ -126,30 +101,23 @@ fun TaskScreen(
                     enabled = !viewModel.isSubmitting.value
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
-
                 OutlinedTextField(
                     value = viewModel.dueDate.value,
                     onValueChange = viewModel::onDueDateChange,
-                    label = { Text("Due date (YYYY-MM-DD, optional)") },
+                    label = { Text("Due date (YYYY-MM-DD)") },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !viewModel.isSubmitting.value
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Button(
+                PrimaryActionButton(
+                    text = if (viewModel.isSubmitting.value) "Creating..." else "Create Challenge",
                     onClick = viewModel::createTask,
-                    modifier = Modifier.fillMaxWidth(),
                     enabled = !viewModel.isSubmitting.value
-                ) {
-                    Text(if (viewModel.isSubmitting.value) "Loading..." else "Create Task")
-                }
+                )
             }
         }
 
         viewModel.error.value?.let {
-            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = it,
                 color = MaterialTheme.colorScheme.error
@@ -157,52 +125,135 @@ fun TaskScreen(
         }
 
         viewModel.successMessage.value?.let {
-            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = it,
                 color = MaterialTheme.colorScheme.primary
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (viewModel.isLoading.value && viewModel.tasks.value.isEmpty()) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.Center
-            ) {
-                CircularProgressIndicator()
-            }
-        } else {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (viewModel.tasks.value.isEmpty()) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "No tasks yet. Create the first challenge.",
-                            modifier = Modifier.padding(16.dp)
-                        )
-                    }
-                }
-
-                viewModel.tasks.value.forEach { task ->
-                    TaskItem(
-                        task = task,
-                        currentUserId = viewModel.currentUserId.value,
-                        isSubmitting = viewModel.isSubmitting.value,
-                        onComplete = { viewModel.completeTask(task.id) },
-                        onReturn = { viewModel.returnTask(task.id) },
-                        onFail = { viewModel.failTask(task.id) }
-                    )
-                }
-            }
+        if (viewModel.isLoading.value && tasks.isEmpty()) {
+            EmptyState(
+                title = "Loading arena",
+                subtitle = "Fetching the latest challenges for your pair."
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            return@Column
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        ArenaSection(
+            title = "Assigned to Me",
+            subtitle = "Challenges I can finish, return, or fail.",
+            tasks = assignedToMe,
+            emptyTitle = "Nothing assigned right now",
+            emptySubtitle = "New challenges from your partner will appear here.",
+            currentUserId = currentUserId,
+            isSubmitting = viewModel.isSubmitting.value,
+            onRequestCompletion = viewModel::requestCompletion,
+            onConfirmCompletion = viewModel::confirmCompletion,
+            onRejectCompletion = viewModel::rejectCompletion,
+            onReturn = viewModel::returnTask,
+            onFail = viewModel::failTask
+        )
+
+        ArenaSection(
+            title = "Created by Me",
+            subtitle = "Live challenges waiting on my partner.",
+            tasks = createdByMe,
+            emptyTitle = "No active challenges from you",
+            emptySubtitle = "Create a new one above when you're ready.",
+            currentUserId = currentUserId,
+            isSubmitting = viewModel.isSubmitting.value,
+            onRequestCompletion = viewModel::requestCompletion,
+            onConfirmCompletion = viewModel::confirmCompletion,
+            onRejectCompletion = viewModel::rejectCompletion,
+            onReturn = viewModel::returnTask,
+            onFail = viewModel::failTask
+        )
+
+        ArenaSection(
+            title = "Waiting for Partner Confirmation",
+            subtitle = "I already requested completion.",
+            tasks = waitingForPartner,
+            emptyTitle = "No pending confirmations from you",
+            emptySubtitle = "Request completion from an active challenge to see it here.",
+            currentUserId = currentUserId,
+            isSubmitting = viewModel.isSubmitting.value,
+            onRequestCompletion = viewModel::requestCompletion,
+            onConfirmCompletion = viewModel::confirmCompletion,
+            onRejectCompletion = viewModel::rejectCompletion,
+            onReturn = viewModel::returnTask,
+            onFail = viewModel::failTask
+        )
+
+        ArenaSection(
+            title = "Waiting for My Decision",
+            subtitle = "Partner asked me to confirm completion.",
+            tasks = waitingForMyDecision,
+            emptyTitle = "No partner confirmations pending",
+            emptySubtitle = "When your partner requests completion, it will show up here.",
+            currentUserId = currentUserId,
+            isSubmitting = viewModel.isSubmitting.value,
+            onRequestCompletion = viewModel::requestCompletion,
+            onConfirmCompletion = viewModel::confirmCompletion,
+            onRejectCompletion = viewModel::rejectCompletion,
+            onReturn = viewModel::returnTask,
+            onFail = viewModel::failTask
+        )
+
+        ArenaSection(
+            title = "History",
+            subtitle = "Completed and failed challenges.",
+            tasks = history,
+            emptyTitle = "No history yet",
+            emptySubtitle = "Resolved challenges will appear here.",
+            currentUserId = currentUserId,
+            isSubmitting = viewModel.isSubmitting.value,
+            onRequestCompletion = viewModel::requestCompletion,
+            onConfirmCompletion = viewModel::confirmCompletion,
+            onRejectCompletion = viewModel::rejectCompletion,
+            onReturn = viewModel::returnTask,
+            onFail = viewModel::failTask
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun ArenaSection(
+    title: String,
+    subtitle: String,
+    tasks: List<TaskDto>,
+    emptyTitle: String,
+    emptySubtitle: String,
+    currentUserId: String?,
+    isSubmitting: Boolean,
+    onRequestCompletion: (String) -> Unit,
+    onConfirmCompletion: (String) -> Unit,
+    onRejectCompletion: (String) -> Unit,
+    onReturn: (String) -> Unit,
+    onFail: (String) -> Unit
+) {
+    SectionTitle(title = title, subtitle = subtitle)
+
+    if (tasks.isEmpty()) {
+        EmptyState(
+            title = emptyTitle,
+            subtitle = emptySubtitle
+        )
+    } else {
+        tasks.forEach { task ->
+            TaskItem(
+                task = task,
+                currentUserId = currentUserId,
+                isSubmitting = isSubmitting,
+                onRequestCompletion = { onRequestCompletion(task.id) },
+                onConfirmCompletion = { onConfirmCompletion(task.id) },
+                onRejectCompletion = { onRejectCompletion(task.id) },
+                onReturn = { onReturn(task.id) },
+                onFail = { onFail(task.id) }
+            )
+        }
     }
 }
 
@@ -211,69 +262,102 @@ private fun TaskItem(
     task: TaskDto,
     currentUserId: String?,
     isSubmitting: Boolean,
-    onComplete: () -> Unit,
+    onRequestCompletion: () -> Unit,
+    onConfirmCompletion: () -> Unit,
+    onRejectCompletion: () -> Unit,
     onReturn: () -> Unit,
     onFail: () -> Unit
 ) {
     val isAssignedToCurrentUser = currentUserId == task.assignedTo.id
-    val isActive = task.status == "ACTIVE"
+    val isCreatedByCurrentUser = currentUserId == task.createdBy.id
+    val completionRequestedByCurrentUser = currentUserId == task.completionRequestedBy?.id
     val dueDate = formatIsoDateForDisplay(task.dueDate)
 
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
+    AppCard {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = task.title,
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
             )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Bank: ${task.bank} points",
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Text(text = "Status: ${task.status.lowercase().replaceFirstChar { it.uppercase() }}")
+            Text(text = "Bank: ${task.bank} points")
+            Text(text = "Status: ${formatTaskStatus(task.status, completionRequestedByCurrentUser)}")
             Text(text = "Created by: ${task.createdBy.email}")
             Text(text = "Assigned to: ${task.assignedTo.email}")
+            task.completionRequestedBy?.let {
+                Text(text = "Completion requested by: ${it.email}")
+            }
             dueDate?.let {
                 Text(text = "Due date: $it")
             }
 
-            if (isActive && isAssignedToCurrentUser) {
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Button(
-                    onClick = onComplete,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isSubmitting
-                ) {
-                    Text("Complete")
+            when {
+                task.status == "ACTIVE" && isAssignedToCurrentUser -> {
+                    PrimaryActionButton(
+                        text = "Request Complete",
+                        onClick = onRequestCompletion,
+                        enabled = !isSubmitting
+                    )
+                    OutlinedButton(
+                        onClick = onReturn,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isSubmitting
+                    ) {
+                        Text("Return")
+                    }
+                    OutlinedButton(
+                        onClick = onFail,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isSubmitting
+                    ) {
+                        Text("Fail")
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedButton(
-                    onClick = onReturn,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isSubmitting
-                ) {
-                    Text("Return")
+                task.status == "WAITING_CONFIRMATION" && !completionRequestedByCurrentUser -> {
+                    Text(
+                        text = "Partner requested completion",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    PrimaryActionButton(
+                        text = "Confirm",
+                        onClick = onConfirmCompletion,
+                        enabled = !isSubmitting
+                    )
+                    OutlinedButton(
+                        onClick = onRejectCompletion,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isSubmitting
+                    ) {
+                        Text("Reject")
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                task.status == "WAITING_CONFIRMATION" && completionRequestedByCurrentUser -> {
+                    Text(
+                        text = "Waiting for partner confirmation",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
 
-                OutlinedButton(
-                    onClick = onFail,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isSubmitting
-                ) {
-                    Text("Fail")
+                task.status == "ACTIVE" && isCreatedByCurrentUser -> {
+                    Text(
+                        text = "Challenge is active and waiting on your partner.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
         }
+    }
+}
+
+private fun formatTaskStatus(status: String, requestedByCurrentUser: Boolean): String {
+    return when {
+        status == "WAITING_CONFIRMATION" && requestedByCurrentUser -> "Waiting for partner confirmation"
+        status == "WAITING_CONFIRMATION" -> "Partner requested completion"
+        else -> status.lowercase().replaceFirstChar { it.uppercase() }
     }
 }

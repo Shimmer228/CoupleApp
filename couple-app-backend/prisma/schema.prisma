@@ -9,6 +9,7 @@ datasource db {
 
 enum TaskStatus {
   ACTIVE
+  WAITING_CONFIRMATION
   COMPLETED
   FAILED
 }
@@ -24,11 +25,25 @@ enum TransactionCategory {
   SHARED
 }
 
+enum WishlistPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum BlueprintType {
+  TASK
+  EVENT
+}
+
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
   password  String
   points    Int      @default(100)
+  nickname  String?
+  avatarKey String?
+  winStreak Int      @default(0)
   createdAt DateTime @default(now())
 
   pairId String?
@@ -36,8 +51,12 @@ model User {
 
   createdTasks  Task[] @relation("CreatedTasks")
   assignedTasks Task[] @relation("AssignedTasks")
+  completionRequestedTasks Task[] @relation("CompletionRequestedTasks")
   createdEvents Event[] @relation("CreatedEvents")
   createdTransactions Transaction[] @relation("CreatedTransactions")
+  createdWishlistItems WishlistItem[] @relation("CreatedWishlistItems")
+  rewardPurchases RewardPurchase[]
+  createdBlueprints Blueprint[] @relation("CreatedBlueprints")
 }
 
 model Pair {
@@ -49,6 +68,9 @@ model Pair {
   tasks Task[]
   events Event[]
   transactions Transaction[]
+  wishlistItems WishlistItem[]
+  rewardPurchases RewardPurchase[]
+  blueprints Blueprint[]
 }
 
 model Task {
@@ -58,15 +80,18 @@ model Task {
   status       TaskStatus @default(ACTIVE)
   assignedToId String
   createdById  String
+  completionRequestedById String?
   pairId       String
   dueDate      DateTime?
   createdAt    DateTime   @default(now())
 
   assignedTo User @relation("AssignedTasks", fields: [assignedToId], references: [id], onDelete: Restrict)
   createdBy  User @relation("CreatedTasks", fields: [createdById], references: [id], onDelete: Restrict)
+  completionRequestedBy User? @relation("CompletionRequestedTasks", fields: [completionRequestedById], references: [id], onDelete: SetNull)
   pair       Pair @relation(fields: [pairId], references: [id], onDelete: Cascade)
 
   @@index([pairId, createdAt])
+  @@index([completionRequestedById])
 }
 
 model Event {
@@ -95,6 +120,69 @@ model Transaction {
   createdAt   DateTime            @default(now())
 
   createdBy User @relation("CreatedTransactions", fields: [createdById], references: [id], onDelete: Restrict)
+  pair      Pair @relation(fields: [pairId], references: [id], onDelete: Cascade)
+
+  @@index([pairId, createdAt])
+}
+
+model WishlistItem {
+  id          String              @id @default(uuid())
+  title       String
+  url         String?
+  price       Float?
+  priority    WishlistPriority
+  category    TransactionCategory
+  isPurchased Boolean             @default(false)
+  createdById String
+  pairId      String
+  createdAt   DateTime            @default(now())
+
+  createdBy User @relation("CreatedWishlistItems", fields: [createdById], references: [id], onDelete: Restrict)
+  pair      Pair @relation(fields: [pairId], references: [id], onDelete: Cascade)
+
+  @@index([pairId, createdAt])
+}
+
+model Reward {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  cost        Int
+  minStreak   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  purchases RewardPurchase[]
+}
+
+model RewardPurchase {
+  id        String   @id @default(uuid())
+  rewardId  String
+  userId    String
+  pairId    String
+  createdAt DateTime @default(now())
+
+  reward Reward @relation(fields: [rewardId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  pair   Pair   @relation(fields: [pairId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([pairId, createdAt])
+}
+
+model Blueprint {
+  id             String        @id @default(uuid())
+  title          String
+  description    String?
+  type           BlueprintType
+  defaultPoints  Int?
+  defaultDueTime String?
+  defaultTime    String?
+  createdById    String
+  pairId         String
+  createdAt      DateTime      @default(now())
+
+  createdBy User @relation("CreatedBlueprints", fields: [createdById], references: [id], onDelete: Restrict)
   pair      Pair @relation(fields: [pairId], references: [id], onDelete: Cascade)
 
   @@index([pairId, createdAt])

@@ -7,25 +7,54 @@ import androidx.lifecycle.viewModelScope
 import com.vandoliak.coupleapp.data.local.TokenManager
 import com.vandoliak.coupleapp.data.remote.EventCreateRequest
 import com.vandoliak.coupleapp.data.remote.EventDto
+import com.vandoliak.coupleapp.data.remote.EventUpdateRequest
 import com.vandoliak.coupleapp.data.remote.RetrofitInstance
+import com.vandoliak.coupleapp.data.remote.TaskCreateRequest
+import com.vandoliak.coupleapp.data.remote.TaskDeleteResponse
 import com.vandoliak.coupleapp.data.remote.TaskDto
+import com.vandoliak.coupleapp.data.remote.TaskUpdateRequest
 import com.vandoliak.coupleapp.data.remote.extractErrorMessage
 import com.vandoliak.coupleapp.presentation.util.dateInputToApiDate
-import com.vandoliak.coupleapp.presentation.util.isoDateMatchesSelectedDay
-import com.vandoliak.coupleapp.presentation.util.parseDateInput
-import com.vandoliak.coupleapp.presentation.util.sanitizeDateInput
-import com.vandoliak.coupleapp.presentation.util.todayDateInput
+import com.vandoliak.coupleapp.presentation.util.isoDateToLocalDate
+import com.vandoliak.coupleapp.presentation.util.localDateToApiDate
+import com.vandoliak.coupleapp.presentation.util.toDateInput
+import com.vandoliak.coupleapp.presentation.util.todayLocalDate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import retrofit2.Response
 import java.time.LocalDate
+import java.time.YearMonth
+
+enum class CalendarItemType {
+    TASK,
+    EVENT
+}
 
 data class CalendarItemUi(
     val id: String,
+    val sourceId: String,
     val title: String,
-    val type: String,
-    val subtitle: String,
-    val dateLabel: String,
-    val sortKey: String
+    val type: CalendarItemType,
+    val supportingText: String,
+    val date: LocalDate,
+    val description: String?,
+    val defaultPoints: Int?,
+    val createdById: String,
+    val createdByLabel: String,
+    val assignedToId: String? = null,
+    val assignedToLabel: String? = null,
+    val status: String? = null,
+    val completionRequestedById: String? = null,
+    val completionRequestedByLabel: String? = null
+)
+
+data class CalendarDayUi(
+    val date: LocalDate,
+    val isInCurrentMonth: Boolean,
+    val isToday: Boolean,
+    val isSelected: Boolean,
+    val previews: List<CalendarItemUi>,
+    val remainingCount: Int
 )
 
 class CalendarViewModel(app: Application) : AndroidViewModel(app) {
@@ -35,7 +64,22 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     private var allTasks: List<TaskDto> = emptyList()
     private var allEvents: List<EventDto> = emptyList()
 
-    var selectedDate = mutableStateOf(todayDateInput())
+    var visibleMonth = mutableStateOf(YearMonth.now())
+        private set
+
+    var selectedDate = mutableStateOf(todayLocalDate())
+        private set
+
+    var monthDays = mutableStateOf<List<CalendarDayUi>>(emptyList())
+        private set
+
+    var selectedDayItems = mutableStateOf<List<CalendarItemUi>>(emptyList())
+        private set
+
+    var currentUserId = mutableStateOf<String?>(null)
+        private set
+
+    var isDaySheetVisible = mutableStateOf(false)
         private set
 
     var eventTitle = mutableStateOf("")
@@ -44,10 +88,10 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     var eventDescription = mutableStateOf("")
         private set
 
-    var eventDate = mutableStateOf(todayDateInput())
+    var taskTitle = mutableStateOf("")
         private set
 
-    var calendarItems = mutableStateOf<List<CalendarItemUi>>(emptyList())
+    var taskPoints = mutableStateOf("")
         private set
 
     var isLoading = mutableStateOf(false)
@@ -62,10 +106,35 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     var successMessage = mutableStateOf<String?>(null)
         private set
 
-    fun onSelectedDateChange(value: String) {
-        selectedDate.value = sanitizeDateInput(value)
-        rebuildCalendarItems()
+    fun loadCalendar() {
+        viewModelScope.launch {
+            loadData(showLoader = true)
+        }
     }
+
+    fun goToPreviousMonth() {
+        visibleMonth.value = visibleMonth.value.minusMonths(1)
+        rebuildCalendarState()
+    }
+
+    fun goToNextMonth() {
+        visibleMonth.value = visibleMonth.value.plusMonths(1)
+        rebuildCalendarState()
+    }
+
+    fun onDaySelected(date: LocalDate) {
+        selectedDate.value = date
+        visibleMonth.value = YearMonth.from(date)
+        isDaySheetVisible.value = true
+        successMessage.value = null
+        rebuildCalendarState()
+    }
+
+    fun dismissDaySheet() {
+        isDaySheetVisible.value = false
+    }
+
+    fun selectedDateInput(): String = toDateInput(selectedDate.value)
 
     fun onEventTitleChange(value: String) {
         eventTitle.value = value
@@ -75,28 +144,160 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
         eventDescription.value = value
     }
 
-    fun onEventDateChange(value: String) {
-        eventDate.value = sanitizeDateInput(value)
+    fun onTaskTitleChange(value: String) {
+        taskTitle.value = value
     }
 
-    fun loadCalendar() {
-        viewModelScope.launch {
-            loadData(showLoader = true)
-        }
+    fun onTaskPointsChange(value: String) {
+        taskPoints.value = value.filter { it.isDigit() }
     }
 
-    fun createEvent() {
+    fun createEventForSelectedDay() {
         if (eventTitle.value.isBlank()) {
             error.value = "Event title is required"
             return
         }
 
-        val apiDate = dateInputToApiDate(eventDate.value)
-        if (apiDate == null) {
-            error.value = "Event date must use YYYY-MM-DD format"
+        viewModelScope.launch {
+            mutateWithRefresh(
+                successText = "Event added to ${selectedDate.value}",
+                request = { authorization ->
+                    RetrofitInstance.eventApi.createEvent(
+                        authorization = authorization,
+                        request = EventCreateRequest(
+                            title = eventTitle.value.trim(),
+                            description = eventDescription.value.trim().ifBlank { null },
+                            date = localDateToApiDate(selectedDate.value)
+                        )
+                    )
+                }
+            )
+
+            if (error.value == null) {
+                eventTitle.value = ""
+                eventDescription.value = ""
+            }
+        }
+    }
+
+    fun createTaskForSelectedDay() {
+        val points = taskPoints.value.toIntOrNull()
+
+        if (taskTitle.value.isBlank()) {
+            error.value = "Task title is required"
             return
         }
 
+        if (points == null || points <= 0) {
+            error.value = "Points must be a positive number"
+            return
+        }
+
+        viewModelScope.launch {
+            mutateTaskAction(
+                successText = "Task scheduled for ${selectedDate.value}",
+                request = { authorization ->
+                    RetrofitInstance.taskApi.createTask(
+                        authorization = authorization,
+                        request = TaskCreateRequest(
+                            title = taskTitle.value.trim(),
+                            points = points,
+                            dueDate = localDateToApiDate(selectedDate.value)
+                        )
+                    )
+                }
+            )
+
+            if (error.value == null) {
+                taskTitle.value = ""
+                taskPoints.value = ""
+            }
+        }
+    }
+
+    fun updateEvent(
+        eventId: String,
+        title: String,
+        description: String,
+        dateInput: String
+    ) {
+        val trimmedTitle = title.trim()
+        val apiDate = dateInputToApiDate(dateInput)
+
+        if (trimmedTitle.isBlank()) {
+            error.value = "Event title is required"
+            return
+        }
+
+        if (apiDate == null) {
+            error.value = "Date must use YYYY-MM-DD format"
+            return
+        }
+
+        viewModelScope.launch {
+            mutateWithRefresh(
+                successText = "Event updated",
+                request = { authorization ->
+                    RetrofitInstance.eventApi.updateEvent(
+                        authorization = authorization,
+                        eventId = eventId,
+                        request = EventUpdateRequest(
+                            title = trimmedTitle,
+                            description = description.trim().ifBlank { null },
+                            date = apiDate
+                        )
+                    )
+                }
+            )
+        }
+    }
+
+    fun deleteEvent(eventId: String) {
+        viewModelScope.launch {
+            mutateWithRefresh(
+                successText = "Event deleted",
+                request = { authorization ->
+                    RetrofitInstance.eventApi.deleteEvent(
+                        authorization = authorization,
+                        eventId = eventId
+                    )
+                }
+            )
+        }
+    }
+
+    fun updateTask(taskId: String, title: String, dateInput: String) {
+        val trimmedTitle = title.trim()
+        val apiDate = if (dateInput.isBlank()) null else dateInputToApiDate(dateInput)
+
+        if (trimmedTitle.isBlank()) {
+            error.value = "Task title is required"
+            return
+        }
+
+        if (dateInput.isNotBlank() && apiDate == null) {
+            error.value = "Date must use YYYY-MM-DD format"
+            return
+        }
+
+        viewModelScope.launch {
+            mutateTaskAction(
+                successText = "Task updated",
+                request = { authorization ->
+                    RetrofitInstance.taskApi.updateTask(
+                        authorization = authorization,
+                        taskId = taskId,
+                        request = TaskUpdateRequest(
+                            title = trimmedTitle,
+                            dueDate = apiDate
+                        )
+                    )
+                }
+            )
+        }
+    }
+
+    fun deleteTask(taskId: String) {
         viewModelScope.launch {
             val token = tokenManager.tokenFlow.first()
             if (token.isNullOrBlank()) {
@@ -109,29 +310,67 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
                 error.value = null
                 successMessage.value = null
 
-                val response = RetrofitInstance.eventApi.createEvent(
-                    authorization = "Bearer $token",
-                    request = EventCreateRequest(
-                        title = eventTitle.value.trim(),
-                        description = eventDescription.value.trim().ifBlank { null },
-                        date = apiDate
-                    )
-                )
-
+                val response = RetrofitInstance.taskApi.deleteTask("Bearer $token", taskId)
                 if (!response.isSuccessful) {
-                    error.value = response.extractErrorMessage("Failed to create event")
+                    error.value = response.extractErrorMessage("Failed to delete task")
                     return@launch
                 }
 
-                successMessage.value = "Event created successfully"
-                eventTitle.value = ""
-                eventDescription.value = ""
-                eventDate.value = selectedDate.value
+                val body = response.body()
+                if (body == null) {
+                    error.value = "Server returned an empty response"
+                    return@launch
+                }
+
+                applyTaskDelete(body)
+                successMessage.value = "Task deleted"
                 loadData(showLoader = false)
             } catch (e: Exception) {
                 error.value = e.message ?: "Unknown error"
             } finally {
                 isSubmitting.value = false
+            }
+        }
+    }
+
+    fun requestTaskCompletion(taskId: String) {
+        runTaskAction(taskId, "Waiting for partner confirmation") { authorization, id ->
+            RetrofitInstance.taskApi.requestCompletion(authorization, id)
+        }
+    }
+
+    fun confirmTaskCompletion(taskId: String) {
+        runTaskAction(taskId, "Task completed successfully") { authorization, id ->
+            RetrofitInstance.taskApi.confirmCompletion(authorization, id)
+        }
+    }
+
+    fun rejectTaskCompletion(taskId: String) {
+        runTaskAction(taskId, "Completion request rejected") { authorization, id ->
+            RetrofitInstance.taskApi.rejectCompletion(authorization, id)
+        }
+    }
+
+    fun returnTask(taskId: String) {
+        runTaskAction(taskId, "Task returned successfully") { authorization, id ->
+            RetrofitInstance.taskApi.returnTask(authorization, id)
+        }
+    }
+
+    fun failTask(taskId: String) {
+        runTaskAction(taskId, "Task failed") { authorization, id ->
+            RetrofitInstance.taskApi.failTask(authorization, id)
+        }
+    }
+
+    private fun runTaskAction(
+        taskId: String,
+        successText: String,
+        action: suspend (String, String) -> Response<com.vandoliak.coupleapp.data.remote.TaskActionResponse>
+    ) {
+        viewModelScope.launch {
+            mutateTaskAction(successText) { authorization ->
+                action(authorization, taskId)
             }
         }
     }
@@ -162,9 +401,16 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
                 return
             }
 
-            allTasks = tasksResponse.body()?.tasks.orEmpty()
+            val taskBody = tasksResponse.body()
+            if (taskBody == null) {
+                error.value = "Server returned an empty task list"
+                return
+            }
+
+            currentUserId.value = taskBody.currentUserId
+            allTasks = taskBody.tasks
             allEvents = eventsResponse.body()?.events.orEmpty()
-            rebuildCalendarItems()
+            rebuildCalendarState()
         } catch (e: Exception) {
             error.value = e.message ?: "Unknown error"
         } finally {
@@ -174,39 +420,144 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun rebuildCalendarItems() {
-        val selectedLocalDate = parseDateInput(selectedDate.value)
-        if (selectedLocalDate == null) {
-            calendarItems.value = emptyList()
+    private suspend fun <T> mutateWithRefresh(
+        successText: String,
+        request: suspend (String) -> Response<T>
+    ) {
+        val token = tokenManager.tokenFlow.first()
+        if (token.isNullOrBlank()) {
+            error.value = "Session expired. Please log in again"
             return
         }
 
-        val taskItems = allTasks
-            .filter { isoDateMatchesSelectedDay(it.dueDate, selectedLocalDate) }
-            .map {
-                CalendarItemUi(
-                    id = "task-${it.id}",
-                    title = it.title,
-                    type = "Task",
-                    subtitle = "Bank: ${it.bank} points",
-                    dateLabel = "Due: ${selectedDate.value}",
-                    sortKey = it.dueDate ?: it.createdAt
-                )
+        try {
+            isSubmitting.value = true
+            error.value = null
+            successMessage.value = null
+
+            val response = request("Bearer $token")
+            if (!response.isSuccessful) {
+                error.value = response.extractErrorMessage("Calendar action failed")
+                return
             }
 
-        val eventItems = allEvents
-            .filter { isoDateMatchesSelectedDay(it.date, selectedLocalDate) }
-            .map {
-                CalendarItemUi(
-                    id = "event-${it.id}",
-                    title = it.title,
-                    type = "Event",
-                    subtitle = it.description ?: "No description",
-                    dateLabel = "Date: ${selectedDate.value}",
-                    sortKey = it.date
-                )
+            successMessage.value = successText
+            loadData(showLoader = false)
+        } catch (e: Exception) {
+            error.value = e.message ?: "Unknown error"
+        } finally {
+            isSubmitting.value = false
+        }
+    }
+
+    private suspend fun mutateTaskAction(
+        successText: String,
+        request: suspend (String) -> Response<com.vandoliak.coupleapp.data.remote.TaskActionResponse>
+    ) {
+        val token = tokenManager.tokenFlow.first()
+        if (token.isNullOrBlank()) {
+            error.value = "Session expired. Please log in again"
+            return
+        }
+
+        try {
+            isSubmitting.value = true
+            error.value = null
+            successMessage.value = null
+
+            val response = request("Bearer $token")
+            if (!response.isSuccessful) {
+                error.value = response.extractErrorMessage("Task action failed")
+                return
             }
 
-        calendarItems.value = (taskItems + eventItems).sortedBy { it.sortKey }
+            successMessage.value = successText
+            loadData(showLoader = false)
+        } catch (e: Exception) {
+            error.value = e.message ?: "Unknown error"
+        } finally {
+            isSubmitting.value = false
+        }
+    }
+
+    private fun applyTaskDelete(body: TaskDeleteResponse) {
+        val deletedId = body.deletedId
+        allTasks = allTasks.filterNot { it.id == deletedId }
+    }
+
+    private fun rebuildCalendarState() {
+        val itemsByDate = buildItemsByDate()
+        val month = visibleMonth.value
+        val today = todayLocalDate()
+        val firstMonthDate = month.atDay(1)
+        val leadingDays = firstMonthDate.dayOfWeek.value - 1
+        val startDate = firstMonthDate.minusDays(leadingDays.toLong())
+
+        monthDays.value = (0 until 42).map { index ->
+            val cellDate = startDate.plusDays(index.toLong())
+            val dayItems = itemsByDate[cellDate].orEmpty()
+
+            CalendarDayUi(
+                date = cellDate,
+                isInCurrentMonth = YearMonth.from(cellDate) == month,
+                isToday = cellDate == today,
+                isSelected = cellDate == selectedDate.value,
+                previews = dayItems.take(2),
+                remainingCount = (dayItems.size - 2).coerceAtLeast(0)
+            )
+        }
+
+        selectedDayItems.value = itemsByDate[selectedDate.value].orEmpty()
+    }
+
+    private fun buildItemsByDate(): Map<LocalDate, List<CalendarItemUi>> {
+        val taskItems = allTasks.mapNotNull { task ->
+            val taskDate = isoDateToLocalDate(task.dueDate) ?: return@mapNotNull null
+            taskDate to CalendarItemUi(
+                id = "task-${task.id}",
+                sourceId = task.id,
+                title = task.title,
+                type = CalendarItemType.TASK,
+                supportingText = "Bank: ${task.bank} pts",
+                date = taskDate,
+                description = null,
+                defaultPoints = task.bank,
+                createdById = task.createdBy.id,
+                createdByLabel = task.createdBy.email,
+                assignedToId = task.assignedTo.id,
+                assignedToLabel = task.assignedTo.email,
+                status = task.status,
+                completionRequestedById = task.completionRequestedBy?.id,
+                completionRequestedByLabel = task.completionRequestedBy?.email
+            )
+        }
+
+        val eventItems = allEvents.mapNotNull { event ->
+            val eventDate = isoDateToLocalDate(event.date) ?: return@mapNotNull null
+            eventDate to CalendarItemUi(
+                id = "event-${event.id}",
+                sourceId = event.id,
+                title = event.title,
+                type = CalendarItemType.EVENT,
+                supportingText = event.description ?: "Event",
+                date = eventDate,
+                description = event.description,
+                defaultPoints = null,
+                createdById = event.createdBy.id,
+                createdByLabel = event.createdBy.email
+            )
+        }
+
+        return (taskItems + eventItems)
+            .groupBy(
+                keySelector = { it.first },
+                valueTransform = { it.second }
+            )
+            .mapValues { (_, items) ->
+                items.sortedWith(
+                    compareBy<CalendarItemUi> { if (it.type == CalendarItemType.TASK) 0 else 1 }
+                        .thenBy { it.title.lowercase() }
+                )
+            }
     }
 }

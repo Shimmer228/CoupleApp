@@ -6,6 +6,10 @@ import pairRoutes from "./routes/pair.routes";
 import taskRoutes from "./routes/task.routes";
 import eventRoutes from "./routes/event.routes";
 import transactionRoutes from "./routes/transaction.routes";
+import wishlistRoutes from "./routes/wishlist.routes";
+import profileRoutes from "./routes/profile.routes";
+import rewardRoutes from "./routes/reward.routes";
+import blueprintRoutes from "./routes/blueprint.routes";
 
 dotenv.config();
 
@@ -18,6 +22,10 @@ app.use("/api/pair", pairRoutes);
 app.use("/api/tasks", taskRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/transactions", transactionRoutes);
+app.use("/api/wishlist", wishlistRoutes);
+app.use("/api/profile", profileRoutes);
+app.use("/api/rewards", rewardRoutes);
+app.use("/api/blueprints", blueprintRoutes);
 
 app.get("/", (req, res) => {
   res.send("API is working");

@@ -63,11 +63,6 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         dueDate.value = sanitizeDateInput(value)
     }
 
-    fun clearFeedback() {
-        error.value = null
-        successMessage.value = null
-    }
-
     fun loadTasks() {
         viewModelScope.launch {
             fetchTasks(showLoader = true)
@@ -95,7 +90,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch {
             executeTaskMutation(
-                successText = "Task created successfully"
+                successText = "Challenge created successfully"
             ) { authorization ->
                 RetrofitInstance.taskApi.createTask(
                     authorization = authorization,
@@ -115,9 +110,21 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun completeTask(taskId: String) {
+    fun requestCompletion(taskId: String) {
+        runTaskAction(taskId, "Waiting for partner confirmation") { authorization, id ->
+            RetrofitInstance.taskApi.requestCompletion(authorization, id)
+        }
+    }
+
+    fun confirmCompletion(taskId: String) {
         runTaskAction(taskId, "Task completed successfully") { authorization, id ->
-            RetrofitInstance.taskApi.completeTask(authorization, id)
+            RetrofitInstance.taskApi.confirmCompletion(authorization, id)
+        }
+    }
+
+    fun rejectCompletion(taskId: String) {
+        runTaskAction(taskId, "Completion request rejected") { authorization, id ->
+            RetrofitInstance.taskApi.rejectCompletion(authorization, id)
         }
     }
 
