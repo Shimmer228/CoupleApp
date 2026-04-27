@@ -1,4 +1,4 @@
-import { BlueprintType, Prisma } from "@prisma/client";
+import { BlueprintType, Prisma, TaskRecurrenceType } from "@prisma/client";
 import { Response } from "express";
 import { prisma } from "../config/prisma";
 import { AuthenticatedRequest } from "../types/auth-request";
@@ -226,6 +226,8 @@ export const useBlueprint = async (req: AuthenticatedRequest, res: Response) => 
           title: blueprint.title,
           points: blueprintPoints,
           dueDate: createDateForDayAndTime(date, blueprint.defaultDueTime),
+          recurrenceType: TaskRecurrenceType.NONE,
+          recurrenceInterval: null,
         });
 
         return {

@@ -14,15 +14,39 @@ enum TaskStatus {
   FAILED
 }
 
+enum TaskRecurrenceType {
+  NONE
+  EVERY_X_DAYS
+  WEEKLY
+  MONTHLY
+}
+
 enum TransactionType {
   EXPENSE
   INCOME
 }
 
-enum TransactionCategory {
+enum TransactionScope {
   SELF
   PARTNER
   SHARED
+}
+
+enum TransactionCategory {
+  FOOD
+  UTILITIES
+  TRANSPORT
+  HOME
+  ENTERTAINMENT
+  HEALTH
+  SHOPPING
+  SUBSCRIPTIONS
+  SALARY
+  BONUS
+  GIFT
+  REFUND
+  SIDE_JOB
+  OTHER
 }
 
 enum WishlistPriority {
@@ -43,6 +67,7 @@ model User {
   points    Int      @default(100)
   nickname  String?
   avatarKey String?
+  avatarUrl String?
   winStreak Int      @default(0)
   createdAt DateTime @default(now())
 
@@ -83,6 +108,9 @@ model Task {
   completionRequestedById String?
   pairId       String
   dueDate      DateTime?
+  recurrenceType TaskRecurrenceType @default(NONE)
+  recurrenceInterval Int?
+  recurrenceParentId String?
   createdAt    DateTime   @default(now())
 
   assignedTo User @relation("AssignedTasks", fields: [assignedToId], references: [id], onDelete: Restrict)
@@ -114,7 +142,8 @@ model Transaction {
   title       String
   amount      Float
   type        TransactionType
-  category    TransactionCategory
+  category    TransactionScope
+  transactionCategory TransactionCategory @default(OTHER)
   createdById String
   pairId      String
   createdAt   DateTime            @default(now())
@@ -131,7 +160,7 @@ model WishlistItem {
   url         String?
   price       Float?
   priority    WishlistPriority
-  category    TransactionCategory
+  category    TransactionScope
   isPurchased Boolean             @default(false)
   createdById String
   pairId      String

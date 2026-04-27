@@ -8,6 +8,10 @@ data class ApiErrorResponse(
 )
 
 fun Response<*>.extractErrorMessage(defaultMessage: String): String {
+    if (code() == 401) {
+        return ""
+    }
+
     val rawBody = errorBody()?.string()
 
     if (rawBody.isNullOrBlank()) {

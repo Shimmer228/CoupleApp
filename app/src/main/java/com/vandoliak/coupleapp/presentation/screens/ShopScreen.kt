@@ -16,9 +16,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.data.remote.RewardDto
 import com.vandoliak.coupleapp.presentation.components.AppCard
 import com.vandoliak.coupleapp.presentation.components.AppTopBar
@@ -45,8 +47,8 @@ fun ShopScreen(
     Scaffold(
         topBar = {
             AppTopBar(
-                title = "Point Shop",
-                navigationLabel = "<",
+                title = stringResource(R.string.point_shop),
+                navigationLabel = stringResource(R.string.cancel),
                 onNavigationClick = onNavigateBack
             )
         }
@@ -60,28 +62,28 @@ fun ShopScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             SectionTitle(
-                title = "Reward Catalog",
-                subtitle = "Spend points on playful perks and unlocked rewards."
+                title = stringResource(R.string.reward_catalog),
+                subtitle = stringResource(R.string.reward_catalog_subtitle)
             )
 
             AppCard {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "Points: ${viewModel.currentUserPoints.value}",
+                        text = "${stringResource(R.string.points)}: ${viewModel.currentUserPoints.value}",
                         style = MaterialTheme.typography.titleLarge
                     )
-                    Text(text = "Streak: ${viewModel.currentUserWinStreak.value}")
+                    Text(text = "${stringResource(R.string.streak)}: ${viewModel.currentUserWinStreak.value}")
                 }
             }
 
-            viewModel.error.value?.let {
+            viewModel.error.value?.takeIf { it.isNotBlank() }?.let {
                 Text(
                     text = it,
                     color = MaterialTheme.colorScheme.error
                 )
             }
 
-            viewModel.successMessage.value?.let {
+            viewModel.successMessage.value?.takeIf { it.isNotBlank() }?.let {
                 Text(
                     text = it,
                     color = MaterialTheme.colorScheme.primary
@@ -90,13 +92,13 @@ fun ShopScreen(
 
             if (viewModel.isLoading.value && viewModel.rewards.value.isEmpty()) {
                 EmptyState(
-                    title = "Loading rewards",
-                    subtitle = "Fetching the reward catalog."
+                    title = stringResource(R.string.loading),
+                    subtitle = stringResource(R.string.reward_catalog_subtitle)
                 )
             } else if (viewModel.rewards.value.isEmpty()) {
                 EmptyState(
-                    title = "No rewards available",
-                    subtitle = "Rewards will appear here when the catalog is ready."
+                    title = stringResource(R.string.reward_catalog),
+                    subtitle = stringResource(R.string.reward_catalog_subtitle)
                 )
             } else {
                 viewModel.rewards.value.forEach { reward ->
@@ -138,19 +140,19 @@ private fun RewardCard(
                 )
             }
 
-            Text(text = "Cost: ${reward.cost} points")
-            Text(text = "Required streak: ${reward.minStreak}")
-            Text(text = if (reward.isUnlocked) "Unlocked" else "Locked")
+            Text(text = stringResource(R.string.cost_points_value, reward.cost))
+            Text(text = stringResource(R.string.required_streak_value, reward.minStreak))
+            Text(text = if (reward.isUnlocked) stringResource(R.string.unlocked) else stringResource(R.string.locked))
 
             if (!canAfford) {
                 Text(
-                    text = "Not enough points",
+                    text = stringResource(R.string.not_enough_points),
                     color = MaterialTheme.colorScheme.error
                 )
             }
 
             PrimaryActionButton(
-                text = if (isSubmitting) "Buying..." else "Buy",
+                text = if (isSubmitting) stringResource(R.string.buying) else stringResource(R.string.buy),
                 onClick = onBuy,
                 enabled = canBuy
             )

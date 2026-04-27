@@ -4,18 +4,35 @@ import android.app.Application
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.data.local.TokenManager
 import com.vandoliak.coupleapp.data.remote.RetrofitInstance
 import com.vandoliak.coupleapp.data.remote.WishlistCreateRequest
 import com.vandoliak.coupleapp.data.remote.WishlistItemDto
 import com.vandoliak.coupleapp.data.remote.WishlistPurchaseRequest
+import com.vandoliak.coupleapp.data.remote.WishlistUpdateRequest
 import com.vandoliak.coupleapp.data.remote.extractErrorMessage
+import com.vandoliak.coupleapp.presentation.util.appString
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class WishlistViewModel(app: Application) : AndroidViewModel(app) {
 
     private val tokenManager = TokenManager(app)
+    val expenseTransactionCategories = listOf(
+        "FOOD",
+        "UTILITIES",
+        "TRANSPORT",
+        "HOME",
+        "ENTERTAINMENT",
+        "HEALTH",
+        "SHOPPING",
+        "SUBSCRIPTIONS",
+        "OTHER"
+    )
+
+    var currentUserId = mutableStateOf("")
+        private set
 
     var title = mutableStateOf("")
         private set
@@ -67,29 +84,45 @@ class WishlistViewModel(app: Application) : AndroidViewModel(app) {
         category.value = value
     }
 
+    fun populateEditor(item: WishlistItemDto) {
+        title.value = item.title
+        price.value = item.price?.toString().orEmpty()
+        url.value = item.url.orEmpty()
+        priority.value = item.priority
+        category.value = item.category
+    }
+
+    fun resetForm() {
+        title.value = ""
+        price.value = ""
+        url.value = ""
+        priority.value = "MEDIUM"
+        category.value = "SELF"
+    }
+
     fun loadWishlist() {
         viewModelScope.launch {
             loadData(showLoader = true)
         }
     }
 
-    fun createItem() {
+    fun createItem(onSuccess: (() -> Unit)? = null) {
         val parsedPrice = if (price.value.isBlank()) null else price.value.toDoubleOrNull()
 
         if (title.value.isBlank()) {
-            error.value = "Wishlist title is required"
+            error.value = appString(R.string.wishlist_title_required)
             return
         }
 
         if (parsedPrice != null && parsedPrice < 0) {
-            error.value = "Price must be 0 or greater"
+            error.value = appString(R.string.price_non_negative)
             return
         }
 
         viewModelScope.launch {
             val token = tokenManager.tokenFlow.first()
             if (token.isNullOrBlank()) {
-                error.value = "Session expired. Please log in again"
+                error.value = appString(R.string.session_expired_login)
                 return@launch
             }
 
@@ -110,30 +143,85 @@ class WishlistViewModel(app: Application) : AndroidViewModel(app) {
                 )
 
                 if (!response.isSuccessful) {
-                    error.value = response.extractErrorMessage("Failed to create wishlist item")
+                    error.value = response.extractErrorMessage(appString(R.string.failed_to_create_wishlist_item))
                     return@launch
                 }
 
-                successMessage.value = "Wishlist item created"
-                title.value = ""
-                price.value = ""
-                url.value = ""
-                priority.value = "MEDIUM"
-                category.value = "SELF"
+                successMessage.value = appString(R.string.wishlist_item_created)
+                resetForm()
                 loadData(showLoader = false)
+                onSuccess?.invoke()
             } catch (e: Exception) {
-                error.value = e.message ?: "Unknown error"
+                error.value = e.message ?: appString(R.string.unknown_error)
             } finally {
                 isSubmitting.value = false
             }
         }
     }
 
-    fun purchaseItem(itemId: String, createTransaction: Boolean) {
+    fun updateItem(itemId: String, onSuccess: (() -> Unit)? = null) {
+        val parsedPrice = if (price.value.isBlank()) null else price.value.toDoubleOrNull()
+
+        if (title.value.isBlank()) {
+            error.value = appString(R.string.wishlist_title_required)
+            return
+        }
+
+        if (parsedPrice != null && parsedPrice < 0) {
+            error.value = appString(R.string.price_non_negative)
+            return
+        }
+
         viewModelScope.launch {
             val token = tokenManager.tokenFlow.first()
             if (token.isNullOrBlank()) {
-                error.value = "Session expired. Please log in again"
+                error.value = appString(R.string.session_expired_login)
+                return@launch
+            }
+
+            try {
+                isSubmitting.value = true
+                error.value = null
+                successMessage.value = null
+
+                val response = RetrofitInstance.wishlistApi.updateItem(
+                    authorization = "Bearer $token",
+                    id = itemId,
+                    request = WishlistUpdateRequest(
+                        title = title.value.trim(),
+                        url = url.value.trim().ifBlank { null },
+                        price = parsedPrice,
+                        priority = priority.value,
+                        category = category.value
+                    )
+                )
+
+                if (!response.isSuccessful) {
+                    error.value = response.extractErrorMessage(appString(R.string.failed_to_update_wishlist_item))
+                    return@launch
+                }
+
+                successMessage.value = appString(R.string.wishlist_item_updated)
+                resetForm()
+                loadData(showLoader = false)
+                onSuccess?.invoke()
+            } catch (e: Exception) {
+                error.value = e.message ?: appString(R.string.unknown_error)
+            } finally {
+                isSubmitting.value = false
+            }
+        }
+    }
+
+    fun purchaseItem(
+        itemId: String,
+        createTransaction: Boolean,
+        transactionCategory: String? = null
+    ) {
+        viewModelScope.launch {
+            val token = tokenManager.tokenFlow.first()
+            if (token.isNullOrBlank()) {
+                error.value = appString(R.string.session_expired_login)
                 return@launch
             }
 
@@ -145,34 +233,37 @@ class WishlistViewModel(app: Application) : AndroidViewModel(app) {
                 val response = RetrofitInstance.wishlistApi.purchaseItem(
                     authorization = "Bearer $token",
                     id = itemId,
-                    request = WishlistPurchaseRequest(createTransaction = createTransaction)
+                    request = WishlistPurchaseRequest(
+                        createTransaction = createTransaction,
+                        transactionCategory = transactionCategory
+                    )
                 )
 
                 if (!response.isSuccessful) {
-                    error.value = response.extractErrorMessage("Failed to purchase wishlist item")
+                    error.value = response.extractErrorMessage(appString(R.string.failed_to_purchase_wishlist_item))
                     return@launch
                 }
 
                 successMessage.value = if (createTransaction) {
-                    "Item marked as purchased and added to finance"
+                    appString(R.string.wishlist_item_purchased_finance)
                 } else {
-                    "Item marked as purchased"
+                    appString(R.string.wishlist_item_purchased)
                 }
 
                 loadData(showLoader = false)
             } catch (e: Exception) {
-                error.value = e.message ?: "Unknown error"
+                error.value = e.message ?: appString(R.string.unknown_error)
             } finally {
                 isSubmitting.value = false
             }
         }
     }
 
-    fun deleteItem(itemId: String) {
+    fun deleteItem(itemId: String, onSuccess: (() -> Unit)? = null) {
         viewModelScope.launch {
             val token = tokenManager.tokenFlow.first()
             if (token.isNullOrBlank()) {
-                error.value = "Session expired. Please log in again"
+                error.value = appString(R.string.session_expired_login)
                 return@launch
             }
 
@@ -187,14 +278,15 @@ class WishlistViewModel(app: Application) : AndroidViewModel(app) {
                 )
 
                 if (!response.isSuccessful) {
-                    error.value = response.extractErrorMessage("Failed to delete wishlist item")
+                    error.value = response.extractErrorMessage(appString(R.string.failed_to_delete_wishlist_item))
                     return@launch
                 }
 
-                successMessage.value = "Wishlist item deleted"
+                successMessage.value = appString(R.string.wishlist_item_deleted)
                 loadData(showLoader = false)
+                onSuccess?.invoke()
             } catch (e: Exception) {
-                error.value = e.message ?: "Unknown error"
+                error.value = e.message ?: appString(R.string.unknown_error)
             } finally {
                 isSubmitting.value = false
             }
@@ -204,7 +296,7 @@ class WishlistViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun loadData(showLoader: Boolean) {
         val token = tokenManager.tokenFlow.first()
         if (token.isNullOrBlank()) {
-            error.value = "Session expired. Please log in again"
+            error.value = appString(R.string.session_expired_login)
             return
         }
 
@@ -217,10 +309,11 @@ class WishlistViewModel(app: Application) : AndroidViewModel(app) {
 
             val response = RetrofitInstance.wishlistApi.getItems("Bearer $token")
             if (!response.isSuccessful) {
-                error.value = response.extractErrorMessage("Failed to load wishlist")
+                error.value = response.extractErrorMessage(appString(R.string.failed_to_load_wishlist))
                 return
             }
 
+            currentUserId.value = response.body()?.currentUserId.orEmpty()
             items.value = response.body()
                 ?.items
                 .orEmpty()
@@ -229,7 +322,7 @@ class WishlistViewModel(app: Application) : AndroidViewModel(app) {
                         .thenByDescending { it.createdAt }
                 )
         } catch (e: Exception) {
-            error.value = e.message ?: "Unknown error"
+            error.value = e.message ?: appString(R.string.unknown_error)
         } finally {
             if (showLoader) {
                 isLoading.value = false

@@ -4,12 +4,14 @@ import android.app.Application
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.data.local.TokenManager
 import com.vandoliak.coupleapp.data.remote.BlueprintCreateRequest
 import com.vandoliak.coupleapp.data.remote.BlueprintDto
 import com.vandoliak.coupleapp.data.remote.BlueprintUseRequest
 import com.vandoliak.coupleapp.data.remote.RetrofitInstance
 import com.vandoliak.coupleapp.data.remote.extractErrorMessage
+import com.vandoliak.coupleapp.presentation.util.appString
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -36,7 +38,7 @@ class BlueprintViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val token = tokenManager.tokenFlow.first()
             if (token.isNullOrBlank()) {
-                error.value = "Session expired. Please log in again"
+                error.value = appString(R.string.session_expired_login)
                 return@launch
             }
 
@@ -46,13 +48,13 @@ class BlueprintViewModel(app: Application) : AndroidViewModel(app) {
 
                 val response = RetrofitInstance.blueprintApi.getBlueprints("Bearer $token")
                 if (!response.isSuccessful) {
-                    error.value = response.extractErrorMessage("Failed to load blueprints")
+                    error.value = response.extractErrorMessage(appString(R.string.failed_to_load_blueprints))
                     return@launch
                 }
 
                 blueprints.value = response.body()?.blueprints.orEmpty()
             } catch (e: Exception) {
-                error.value = e.message ?: "Unknown error"
+                error.value = e.message ?: appString(R.string.unknown_error)
             } finally {
                 isLoading.value = false
             }
@@ -70,7 +72,7 @@ class BlueprintViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val token = tokenManager.tokenFlow.first()
             if (token.isNullOrBlank()) {
-                error.value = "Session expired. Please log in again"
+                error.value = appString(R.string.session_expired_login)
                 return@launch
             }
 
@@ -91,15 +93,15 @@ class BlueprintViewModel(app: Application) : AndroidViewModel(app) {
                 )
 
                 if (!response.isSuccessful) {
-                    error.value = response.extractErrorMessage("Failed to create blueprint")
+                    error.value = response.extractErrorMessage(appString(R.string.failed_to_create_blueprint))
                     return@launch
                 }
 
-                successMessage.value = "Blueprint saved"
+                successMessage.value = appString(R.string.blueprint_saved)
                 loadBlueprints()
                 onSuccess?.invoke()
             } catch (e: Exception) {
-                error.value = e.message ?: "Unknown error"
+                error.value = e.message ?: appString(R.string.unknown_error)
             } finally {
                 isSubmitting.value = false
             }
@@ -110,7 +112,7 @@ class BlueprintViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val token = tokenManager.tokenFlow.first()
             if (token.isNullOrBlank()) {
-                error.value = "Session expired. Please log in again"
+                error.value = appString(R.string.session_expired_login)
                 return@launch
             }
 
@@ -125,14 +127,14 @@ class BlueprintViewModel(app: Application) : AndroidViewModel(app) {
                 )
 
                 if (!response.isSuccessful) {
-                    error.value = response.extractErrorMessage("Failed to delete blueprint")
+                    error.value = response.extractErrorMessage(appString(R.string.failed_to_delete_blueprint))
                     return@launch
                 }
 
-                successMessage.value = "Blueprint deleted"
+                successMessage.value = appString(R.string.blueprint_deleted)
                 loadBlueprints()
             } catch (e: Exception) {
-                error.value = e.message ?: "Unknown error"
+                error.value = e.message ?: appString(R.string.unknown_error)
             } finally {
                 isSubmitting.value = false
             }
@@ -147,7 +149,7 @@ class BlueprintViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val token = tokenManager.tokenFlow.first()
             if (token.isNullOrBlank()) {
-                error.value = "Session expired. Please log in again"
+                error.value = appString(R.string.session_expired_login)
                 return@launch
             }
 
@@ -163,14 +165,14 @@ class BlueprintViewModel(app: Application) : AndroidViewModel(app) {
                 )
 
                 if (!response.isSuccessful) {
-                    error.value = response.extractErrorMessage("Failed to use blueprint")
+                    error.value = response.extractErrorMessage(appString(R.string.failed_to_use_blueprint))
                     return@launch
                 }
 
-                successMessage.value = "Blueprint applied"
+                successMessage.value = appString(R.string.blueprint_applied)
                 onSuccess?.invoke()
             } catch (e: Exception) {
-                error.value = e.message ?: "Unknown error"
+                error.value = e.message ?: appString(R.string.unknown_error)
             } finally {
                 isSubmitting.value = false
             }

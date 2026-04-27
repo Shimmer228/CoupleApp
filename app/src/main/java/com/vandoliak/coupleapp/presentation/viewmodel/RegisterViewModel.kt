@@ -4,10 +4,12 @@ import android.app.Application
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.data.local.TokenManager
 import com.vandoliak.coupleapp.data.remote.AuthRequest
 import com.vandoliak.coupleapp.data.remote.RetrofitInstance
 import com.vandoliak.coupleapp.data.remote.extractErrorMessage
+import com.vandoliak.coupleapp.presentation.util.appString
 import kotlinx.coroutines.launch
 
 class RegisterViewModel(app: Application) : AndroidViewModel(app) {
@@ -47,12 +49,12 @@ class RegisterViewModel(app: Application) : AndroidViewModel(app) {
                 error.value = null
 
                 if (email.value.isBlank() || password.value.isBlank() || confirmPassword.value.isBlank()) {
-                    error.value = "All fields are required"
+                    error.value = appString(R.string.all_fields_required)
                     return@launch
                 }
 
                 if (password.value != confirmPassword.value) {
-                    error.value = "Passwords do not match"
+                    error.value = appString(R.string.passwords_do_not_match)
                     return@launch
                 }
 
@@ -68,16 +70,17 @@ class RegisterViewModel(app: Application) : AndroidViewModel(app) {
 
                     token?.let {
                         tokenManager.saveSession(it, authResponse.user.pairId)
+                        RetrofitInstance.markSessionActive()
                         onSuccess(!authResponse.user.pairId.isNullOrBlank())
                     } ?: run {
-                        error.value = "Server returned an empty response"
+                        error.value = appString(R.string.server_empty_response)
                     }
                 } else {
-                    error.value = response.extractErrorMessage("Registration failed")
+                    error.value = response.extractErrorMessage(appString(R.string.registration_failed))
                 }
 
             } catch (e: Exception) {
-                error.value = e.message
+                error.value = e.message ?: appString(R.string.unknown_error)
             } finally {
                 isLoading.value = false
             }

@@ -10,6 +10,7 @@ const sanitizeUser = (user: {
   points: number;
   nickname: string | null;
   avatarKey: string | null;
+  avatarUrl: string | null;
   winStreak: number;
 }) => ({
   id: user.id,
@@ -18,6 +19,7 @@ const sanitizeUser = (user: {
   points: user.points,
   nickname: user.nickname,
   avatarKey: user.avatarKey,
+  avatarUrl: user.avatarUrl,
   winStreak: user.winStreak,
 });
 
@@ -50,6 +52,7 @@ export const register = async (req: Request, res: Response) => {
         points: true,
         nickname: true,
         avatarKey: true,
+        avatarUrl: true,
         winStreak: true,
       },
     });

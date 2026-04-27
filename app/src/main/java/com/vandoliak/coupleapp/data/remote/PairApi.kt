@@ -14,6 +14,10 @@ data class PairResponse(
     val joinCode: String?
 )
 
+data class LeavePairResponse(
+    val leftPair: Boolean
+)
+
 interface PairApi {
 
     @POST("api/pair/create")
@@ -26,4 +30,9 @@ interface PairApi {
         @Header("Authorization") authorization: String,
         @Body request: JoinPairRequest
     ): Response<PairResponse>
+
+    @POST("api/pair/leave")
+    suspend fun leavePair(
+        @Header("Authorization") authorization: String
+    ): Response<LeavePairResponse>
 }

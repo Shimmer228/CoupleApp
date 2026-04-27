@@ -23,10 +23,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -43,17 +47,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.data.remote.BlueprintDto
 import com.vandoliak.coupleapp.presentation.components.EmptyState
 import com.vandoliak.coupleapp.presentation.components.SectionTitle
+import com.vandoliak.coupleapp.presentation.components.SelectionChip
+import com.vandoliak.coupleapp.presentation.util.blueprintTypeLabel
 import com.vandoliak.coupleapp.presentation.util.formatFullDate
 import com.vandoliak.coupleapp.presentation.util.formatMonthTitle
+import com.vandoliak.coupleapp.presentation.util.recurrenceLabel
+import com.vandoliak.coupleapp.presentation.util.scopeLabel
+import com.vandoliak.coupleapp.presentation.util.taskStatusLabel
 import com.vandoliak.coupleapp.presentation.util.toDateInput
+import com.vandoliak.coupleapp.presentation.util.transactionCategoryLabel
 import com.vandoliak.coupleapp.presentation.viewmodel.BlueprintViewModel
 import com.vandoliak.coupleapp.presentation.viewmodel.CalendarDayUi
 import com.vandoliak.coupleapp.presentation.viewmodel.CalendarItemType
@@ -65,6 +79,7 @@ import com.vandoliak.coupleapp.presentation.viewmodel.CalendarViewModel
 fun CalendarScreen(
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val calendarViewModel: CalendarViewModel = viewModel()
     val blueprintViewModel: BlueprintViewModel = viewModel()
 
@@ -89,7 +104,16 @@ fun CalendarScreen(
     ) {
         val cellHeight = if (maxWidth > maxHeight || maxWidth >= 600.dp) 120.dp else 96.dp
         val days = calendarViewModel.monthDays.value
-        val weekdayLabels = remember { listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun") }
+        val currentUserId = calendarViewModel.currentUserId.value
+        val weekdayLabels = listOf(
+            stringResource(R.string.weekday_mon),
+            stringResource(R.string.weekday_tue),
+            stringResource(R.string.weekday_wed),
+            stringResource(R.string.weekday_thu),
+            stringResource(R.string.weekday_fri),
+            stringResource(R.string.weekday_sat),
+            stringResource(R.string.weekday_sun)
+        )
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(7),
@@ -107,7 +131,7 @@ fun CalendarScreen(
             }
 
             item(span = { GridItemSpan(7) }) {
-                calendarViewModel.error.value?.let { message ->
+                calendarViewModel.error.value?.takeIf { it.isNotBlank() }?.let { message ->
                     Text(
                         text = message,
                         modifier = Modifier
@@ -139,7 +163,7 @@ fun CalendarScreen(
             if (calendarViewModel.isLoading.value && days.isEmpty()) {
                 item(span = { GridItemSpan(7) }) {
                     EmptyState(
-                        title = "Loading calendar...",
+                        title = stringResource(R.string.calendar_loading_title),
                         modifier = Modifier.padding(top = 12.dp)
                     )
                 }
@@ -147,6 +171,7 @@ fun CalendarScreen(
                 items(days, key = { it.date.toString() }) { day ->
                     CalendarDayCell(
                         day = day,
+                        currentUserId = currentUserId,
                         cellHeight = cellHeight,
                         onClick = { calendarViewModel.onDaySelected(day.date) }
                     )
@@ -170,7 +195,10 @@ private fun CalendarHeader(
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         TextButton(onClick = onPrevious) {
-            Text("<")
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                contentDescription = stringResource(R.string.previous_month)
+            )
         }
 
         Text(
@@ -180,7 +208,10 @@ private fun CalendarHeader(
         )
 
         TextButton(onClick = onNext) {
-            Text(">")
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = stringResource(R.string.next_month)
+            )
         }
     }
 }
@@ -188,7 +219,8 @@ private fun CalendarHeader(
 @Composable
 private fun CalendarDayCell(
     day: CalendarDayUi,
-    cellHeight: androidx.compose.ui.unit.Dp,
+    currentUserId: String?,
+    cellHeight: Dp,
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
@@ -220,12 +252,12 @@ private fun CalendarDayCell(
             DayNumber(day = day)
 
             day.previews.forEach { item ->
-                CompactPreviewChip(item = item)
+                CompactPreviewChip(item = item, currentUserId = currentUserId)
             }
 
             if (day.remainingCount > 0) {
                 Text(
-                    text = "+${day.remainingCount}",
+                    text = stringResource(R.string.plus_more, day.remainingCount),
                     color = colors.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -271,17 +303,21 @@ private fun DayNumber(day: CalendarDayUi) {
 }
 
 @Composable
-private fun CompactPreviewChip(item: CalendarItemUi) {
+private fun CompactPreviewChip(
+    item: CalendarItemUi,
+    currentUserId: String?
+) {
     val colors = MaterialTheme.colorScheme
-    val backgroundColor = if (item.type == CalendarItemType.TASK) {
-        colors.tertiaryContainer.copy(alpha = 0.95f)
-    } else {
-        colors.primaryContainer.copy(alpha = 0.85f)
+    val isCurrentUserTask = item.type == CalendarItemType.TASK && item.assignedToId == currentUserId
+    val backgroundColor = when {
+        item.type == CalendarItemType.EVENT -> colors.surfaceVariant.copy(alpha = 0.85f)
+        isCurrentUserTask -> colors.primaryContainer.copy(alpha = 0.95f)
+        else -> colors.tertiaryContainer.copy(alpha = 0.95f)
     }
-    val textColor = if (item.type == CalendarItemType.TASK) {
-        colors.onTertiaryContainer
-    } else {
-        colors.onPrimaryContainer
+    val textColor = when {
+        item.type == CalendarItemType.EVENT -> colors.onSurfaceVariant
+        isCurrentUserTask -> colors.onPrimaryContainer
+        else -> colors.onTertiaryContainer
     }
 
     Box(
@@ -294,7 +330,7 @@ private fun CompactPreviewChip(item: CalendarItemUi) {
     ) {
         Text(
             text = if (item.type == CalendarItemType.TASK) {
-                "${item.title} ${item.defaultPoints ?: 0}"
+                stringResource(R.string.calendar_task_preview, item.title, item.defaultPoints ?: 0)
             } else {
                 item.title
             },
@@ -375,10 +411,10 @@ private fun SelectedDaySheet(
     ) {
         SectionTitle(
             title = formatFullDate(selectedDate),
-            subtitle = "Tasks and events planned for this day"
+            subtitle = stringResource(R.string.day_items_subtitle)
         )
 
-        calendarViewModel.successMessage.value?.let { message ->
+        calendarViewModel.successMessage.value?.takeIf { it.isNotBlank() }?.let { message ->
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
@@ -386,7 +422,7 @@ private fun SelectedDaySheet(
             )
         }
 
-        calendarViewModel.error.value?.let { message ->
+        calendarViewModel.error.value?.takeIf { it.isNotBlank() }?.let { message ->
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
@@ -394,7 +430,7 @@ private fun SelectedDaySheet(
             )
         }
 
-        blueprintViewModel.successMessage.value?.let { message ->
+        blueprintViewModel.successMessage.value?.takeIf { it.isNotBlank() }?.let { message ->
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
@@ -402,7 +438,7 @@ private fun SelectedDaySheet(
             )
         }
 
-        blueprintViewModel.error.value?.let { message ->
+        blueprintViewModel.error.value?.takeIf { it.isNotBlank() }?.let { message ->
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
@@ -412,8 +448,8 @@ private fun SelectedDaySheet(
 
         if (selectedItems.isEmpty()) {
             EmptyState(
-                title = "Nothing planned yet",
-                subtitle = "Create a task, add an event, or use a blueprint"
+                title = stringResource(R.string.nothing_planned_title),
+                subtitle = stringResource(R.string.nothing_planned_subtitle)
             )
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -447,15 +483,15 @@ private fun SelectedDaySheet(
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle(
-                title = "Create event",
-                subtitle = "Quick reminder for this date"
+                title = stringResource(R.string.create_event_title),
+                subtitle = stringResource(R.string.create_event_subtitle)
             )
 
             OutlinedTextField(
                 value = calendarViewModel.eventTitle.value,
                 onValueChange = calendarViewModel::onEventTitleChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Title") },
+                label = { Text(stringResource(R.string.title)) },
                 singleLine = true
             )
 
@@ -463,7 +499,7 @@ private fun SelectedDaySheet(
                 value = calendarViewModel.eventDescription.value,
                 onValueChange = calendarViewModel::onEventDescriptionChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Description") },
+                label = { Text(stringResource(R.string.description)) },
                 maxLines = 3
             )
 
@@ -472,7 +508,7 @@ private fun SelectedDaySheet(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !calendarViewModel.isSubmitting.value && !blueprintViewModel.isSubmitting.value
             ) {
-                Text("Create Event")
+                Text(stringResource(R.string.create_event_button))
             }
         }
 
@@ -480,15 +516,15 @@ private fun SelectedDaySheet(
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle(
-                title = "Create task",
-                subtitle = "Challenge your partner on this day"
+                title = stringResource(R.string.create_task_title),
+                subtitle = stringResource(R.string.create_task_subtitle)
             )
 
             OutlinedTextField(
                 value = calendarViewModel.taskTitle.value,
                 onValueChange = calendarViewModel::onTaskTitleChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Title") },
+                label = { Text(stringResource(R.string.title)) },
                 singleLine = true
             )
 
@@ -496,8 +532,16 @@ private fun SelectedDaySheet(
                 value = calendarViewModel.taskPoints.value,
                 onValueChange = calendarViewModel::onTaskPointsChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Points") },
+                label = { Text(stringResource(R.string.points)) },
                 singleLine = true
+            )
+
+            RecurrenceSelector(
+                recurrenceType = calendarViewModel.recurrenceType.value,
+                recurrenceInterval = calendarViewModel.recurrenceInterval.value,
+                isSubmitting = calendarViewModel.isSubmitting.value || blueprintViewModel.isSubmitting.value,
+                onRecurrenceTypeChange = calendarViewModel::onRecurrenceTypeChange,
+                onRecurrenceIntervalChange = calendarViewModel::onRecurrenceIntervalChange
             )
 
             Button(
@@ -505,7 +549,7 @@ private fun SelectedDaySheet(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !calendarViewModel.isSubmitting.value && !blueprintViewModel.isSubmitting.value
             ) {
-                Text("Create Task")
+                Text(stringResource(R.string.create_task_button))
             }
         }
 
@@ -518,26 +562,36 @@ private fun SelectedDaySheet(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 SectionTitle(
-                    title = "Blueprints",
-                    subtitle = if (showBlueprints) "Tap one to use it on this date" else "Reusable task and event templates"
+                    title = stringResource(R.string.blueprints_title),
+                    subtitle = if (showBlueprints) {
+                        stringResource(R.string.blueprints_use_subtitle)
+                    } else {
+                        stringResource(R.string.blueprints_library_subtitle)
+                    }
                 )
 
                 TextButton(onClick = { showBlueprints = !showBlueprints }) {
-                    Text(if (showBlueprints) "Hide" else "Use Blueprint")
+                    Text(
+                        if (showBlueprints) {
+                            stringResource(R.string.hide)
+                        } else {
+                            stringResource(R.string.use_blueprint)
+                        }
+                    )
                 }
             }
 
             if (showBlueprints) {
                 if (blueprintViewModel.isLoading.value && blueprintViewModel.blueprints.value.isEmpty()) {
                     Text(
-                        text = "Loading blueprints...",
+                        text = stringResource(R.string.loading_blueprints),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else if (blueprintViewModel.blueprints.value.isEmpty()) {
                     EmptyState(
-                        title = "No blueprints yet",
-                        subtitle = "Use Save as Blueprint on a task or event to build your library"
+                        title = stringResource(R.string.no_blueprints_title),
+                        subtitle = stringResource(R.string.no_blueprints_subtitle)
                     )
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -576,6 +630,7 @@ private fun DayDetailItemCard(
     onReturn: () -> Unit,
     onFail: () -> Unit
 ) {
+    val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
     val accent = if (item.type == CalendarItemType.TASK) colors.tertiary else colors.primary
     val canEdit = item.createdById == currentUserId && (item.type == CalendarItemType.EVENT || item.status == "ACTIVE")
@@ -605,7 +660,11 @@ private fun DayDetailItemCard(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = if (item.type == CalendarItemType.TASK) "Task" else "Event",
+                    text = if (item.type == CalendarItemType.TASK) {
+                        stringResource(R.string.task_label)
+                    } else {
+                        stringResource(R.string.event_label)
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     color = accent
                 )
@@ -618,14 +677,14 @@ private fun DayDetailItemCard(
             )
 
             Text(
-                text = "Created by: ${item.createdByLabel}",
+                text = stringResource(R.string.created_by, item.createdByLabel),
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant
             )
 
             item.assignedToLabel?.let { assignedTo ->
                 Text(
-                    text = "Assigned to: $assignedTo",
+                    text = stringResource(R.string.assigned_to_format, assignedTo),
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant
                 )
@@ -633,10 +692,10 @@ private fun DayDetailItemCard(
 
             item.status?.let { status ->
                 Text(
-                    text = when {
-                        status == "WAITING_CONFIRMATION" && completionRequestedByCurrentUser -> "Waiting for partner confirmation"
-                        status == "WAITING_CONFIRMATION" -> "Partner requested completion"
-                        else -> "Status: ${status.lowercase().replaceFirstChar { it.uppercase() }}"
+                    text = if (status == "WAITING_CONFIRMATION") {
+                        context.taskStatusLabel(status, completionRequestedByCurrentUser)
+                    } else {
+                        stringResource(R.string.status_format, context.taskStatusLabel(status, completionRequestedByCurrentUser))
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (status == "WAITING_CONFIRMATION") colors.primary else colors.onSurfaceVariant
@@ -645,7 +704,7 @@ private fun DayDetailItemCard(
 
             item.completionRequestedByLabel?.let { requester ->
                 Text(
-                    text = "Completion requested by: $requester",
+                    text = stringResource(R.string.completion_requested_by_format, requester),
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant
                 )
@@ -659,12 +718,25 @@ private fun DayDetailItemCard(
                 )
             }
 
+            item.recurrenceType?.let { recurrenceType ->
+                if (item.type == CalendarItemType.TASK) {
+                    Text(
+                        text = stringResource(
+                            R.string.recurrence_format,
+                            context.recurrenceLabel(recurrenceType, item.recurrenceInterval)
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+            }
+
             TextButton(
                 onClick = onSaveAsBlueprint,
                 enabled = !isBusy,
                 modifier = Modifier.align(Alignment.End)
             ) {
-                Text("Save as Blueprint")
+                Text(stringResource(R.string.save_as_blueprint))
             }
 
             if (canEdit) {
@@ -673,7 +745,7 @@ private fun DayDetailItemCard(
                     enabled = !isBusy,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Edit")
+                    Text(stringResource(R.string.edit))
                 }
 
                 OutlinedButton(
@@ -681,7 +753,7 @@ private fun DayDetailItemCard(
                     enabled = !isBusy,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Delete")
+                    Text(stringResource(R.string.delete))
                 }
             }
 
@@ -693,7 +765,7 @@ private fun DayDetailItemCard(
                             enabled = !isBusy,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Request Complete")
+                            Text(stringResource(R.string.request_complete))
                         }
 
                         OutlinedButton(
@@ -701,7 +773,7 @@ private fun DayDetailItemCard(
                             enabled = !isBusy,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Return")
+                            Text(stringResource(R.string.return_task))
                         }
 
                         OutlinedButton(
@@ -709,7 +781,7 @@ private fun DayDetailItemCard(
                             enabled = !isBusy,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Fail")
+                            Text(stringResource(R.string.fail_task))
                         }
                     }
 
@@ -719,7 +791,7 @@ private fun DayDetailItemCard(
                             enabled = !isBusy,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Confirm")
+                            Text(stringResource(R.string.confirm))
                         }
 
                         OutlinedButton(
@@ -727,7 +799,7 @@ private fun DayDetailItemCard(
                             enabled = !isBusy,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Reject")
+                            Text(stringResource(R.string.reject))
                         }
                     }
                 }
@@ -748,36 +820,36 @@ private fun EditEventDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit Event") },
+        title = { Text(stringResource(R.string.edit_event_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Title") },
+                    label = { Text(stringResource(R.string.title)) },
                     singleLine = true
                 )
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    label = { Text("Description") }
+                    label = { Text(stringResource(R.string.description)) }
                 )
                 OutlinedTextField(
                     value = dateInput,
                     onValueChange = { dateInput = it },
-                    label = { Text("Date (YYYY-MM-DD)") },
+                    label = { Text(stringResource(R.string.date_yyyy_mm_dd)) },
                     singleLine = true
                 )
             }
         },
         confirmButton = {
             TextButton(onClick = { onSave(title, description, dateInput) }) {
-                Text("Save")
+                Text(stringResource(R.string.save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
@@ -794,31 +866,31 @@ private fun EditTaskDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit Task") },
+        title = { Text(stringResource(R.string.edit_task_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Title") },
+                    label = { Text(stringResource(R.string.title)) },
                     singleLine = true
                 )
                 OutlinedTextField(
                     value = dateInput,
                     onValueChange = { dateInput = it },
-                    label = { Text("Date (YYYY-MM-DD)") },
+                    label = { Text(stringResource(R.string.date_yyyy_mm_dd)) },
                     singleLine = true
                 )
             }
         },
         confirmButton = {
             TextButton(onClick = { onSave(title, dateInput) }) {
-                Text("Save")
+                Text(stringResource(R.string.save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
@@ -832,18 +904,26 @@ private fun DeleteItemDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Delete ${if (item.type == CalendarItemType.TASK) "Task" else "Event"}") },
+        title = {
+            Text(
+                if (item.type == CalendarItemType.TASK) {
+                    stringResource(R.string.delete_task_title)
+                } else {
+                    stringResource(R.string.delete_event_title)
+                }
+            )
+        },
         text = {
-            Text("Are you sure you want to delete \"${item.title}\"?")
+            Text(stringResource(R.string.delete_named_item_message, item.title))
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Delete")
+                Text(stringResource(R.string.delete))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
@@ -856,6 +936,8 @@ private fun BlueprintCard(
     onDelete: () -> Unit,
     isBusy: Boolean
 ) {
+    val context = LocalContext.current
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -884,11 +966,10 @@ private fun BlueprintCard(
 
             Text(
                 text = buildString {
-                    append(blueprint.type)
+                    append(context.blueprintTypeLabel(blueprint.type))
                     blueprint.defaultPoints?.let { points ->
                         append(" • ")
                         append(points)
-                        append(" pts")
                     }
                 },
                 style = MaterialTheme.typography.bodySmall,
@@ -900,7 +981,7 @@ private fun BlueprintCard(
                 enabled = !isBusy,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Delete")
+                Text(stringResource(R.string.delete))
             }
 
             Button(
@@ -908,8 +989,55 @@ private fun BlueprintCard(
                 enabled = !isBusy,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Use")
+                Text(stringResource(R.string.use_blueprint))
             }
+        }
+    }
+}
+
+@Composable
+private fun RecurrenceSelector(
+    recurrenceType: String,
+    recurrenceInterval: String,
+    isSubmitting: Boolean,
+    onRecurrenceTypeChange: (String) -> Unit,
+    onRecurrenceIntervalChange: (String) -> Unit
+) {
+    val context = LocalContext.current
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionTitle(
+            title = stringResource(R.string.recurrence_title),
+            subtitle = stringResource(R.string.recurrence_subtitle)
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(
+                "NONE",
+                "EVERY_X_DAYS",
+                "WEEKLY",
+                "MONTHLY"
+            ).forEach { value ->
+                SelectionChip(
+                    label = context.recurrenceLabel(value),
+                    selected = recurrenceType == value,
+                    onClick = { onRecurrenceTypeChange(value) },
+                    enabled = !isSubmitting
+                )
+            }
+        }
+
+        if (recurrenceType == "EVERY_X_DAYS") {
+            OutlinedTextField(
+                value = recurrenceInterval,
+                onValueChange = onRecurrenceIntervalChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.interval_in_days)) },
+                singleLine = true
+            )
         }
     }
 }

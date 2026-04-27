@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { Prisma, TaskStatus } from "@prisma/client";
+import { Prisma, TaskRecurrenceType, TaskStatus } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import { AuthenticatedRequest } from "../types/auth-request";
 import { parseOptionalDate } from "../utils/date";
@@ -40,21 +40,36 @@ const taskContextSelect = {
   assignedToId: true,
   createdById: true,
   completionRequestedById: true,
+  dueDate: true,
+  recurrenceType: true,
+  recurrenceInterval: true,
+  recurrenceParentId: true,
 } satisfies Prisma.TaskSelect;
+
+type PairUser = {
+  id: string;
+  email: string;
+  nickname: string | null;
+  avatarKey: string | null;
+  points: number;
+};
 
 type TaskCreationInput = {
   userId: string;
   title: string;
   points: number;
   dueDate: Date | null;
+  recurrenceType: TaskRecurrenceType;
+  recurrenceInterval: number | null;
 };
 
-type PairUser = {
+type UserContext = {
   id: string;
-  email: string;
+  pairId: string;
+  points: number;
 };
 
-const getUserContext = async (tx: Prisma.TransactionClient, userId: string) => {
+const getUserContext = async (tx: Prisma.TransactionClient, userId: string): Promise<UserContext> => {
   const user = await tx.user.findUnique({
     where: { id: userId },
     select: {
@@ -72,7 +87,11 @@ const getUserContext = async (tx: Prisma.TransactionClient, userId: string) => {
     throw new Error("PAIR_REQUIRED");
   }
 
-  return user;
+  return {
+    id: user.id,
+    pairId: user.pairId,
+    points: user.points,
+  };
 };
 
 const getPairUsers = async (tx: Prisma.TransactionClient, pairId: string) => {
@@ -81,6 +100,9 @@ const getPairUsers = async (tx: Prisma.TransactionClient, pairId: string) => {
     select: {
       id: true,
       email: true,
+      nickname: true,
+      avatarKey: true,
+      points: true,
     },
   });
 
@@ -89,6 +111,16 @@ const getPairUsers = async (tx: Prisma.TransactionClient, pairId: string) => {
   }
 
   return pairUsers;
+};
+
+const getPartner = (pairUsers: PairUser[], userId: string) => {
+  const partner = pairUsers.find((pairUser) => pairUser.id !== userId);
+
+  if (!partner) {
+    throw new Error("PARTNER_REQUIRED");
+  }
+
+  return partner;
 };
 
 const getTaskForPair = async (tx: Prisma.TransactionClient, taskId: string, pairId: string) => {
@@ -102,16 +134,6 @@ const getTaskForPair = async (tx: Prisma.TransactionClient, taskId: string, pair
   }
 
   return task;
-};
-
-const getPartner = (pairUsers: PairUser[], userId: string) => {
-  const partner = pairUsers.find((pairUser) => pairUser.id !== userId);
-
-  if (!partner) {
-    throw new Error("PARTNER_REQUIRED");
-  }
-
-  return partner;
 };
 
 const ensureAssignedUserCanAct = (task: Prisma.TaskGetPayload<{ select: typeof taskContextSelect }>, userId: string) => {
@@ -134,10 +156,218 @@ const ensureCreatorCanModify = (task: Prisma.TaskGetPayload<{ select: typeof tas
   }
 };
 
+const parseRecurrenceType = (value: unknown): TaskRecurrenceType => {
+  const normalized = String(value ?? "NONE").trim().toUpperCase();
+
+  if (
+    normalized === TaskRecurrenceType.NONE ||
+    normalized === TaskRecurrenceType.EVERY_X_DAYS ||
+    normalized === TaskRecurrenceType.WEEKLY ||
+    normalized === TaskRecurrenceType.MONTHLY
+  ) {
+    return normalized;
+  }
+
+  throw new Error("INVALID_RECURRENCE_TYPE");
+};
+
+const parseRecurrenceInterval = (type: TaskRecurrenceType, value: unknown) => {
+  if (type !== TaskRecurrenceType.EVERY_X_DAYS) {
+    return null;
+  }
+
+  const interval = Number(value);
+  if (!Number.isInteger(interval) || interval <= 0) {
+    throw new Error("INVALID_RECURRENCE_INTERVAL");
+  }
+
+  return interval;
+};
+
+const getGenerationHorizon = () => {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0, 23, 59, 59, 999));
+};
+
+const addRecurrence = (date: Date, type: TaskRecurrenceType, interval: number | null) => {
+  const next = new Date(date);
+
+  switch (type) {
+    case TaskRecurrenceType.EVERY_X_DAYS:
+      next.setUTCDate(next.getUTCDate() + (interval ?? 1));
+      return next;
+    case TaskRecurrenceType.WEEKLY:
+      next.setUTCDate(next.getUTCDate() + 7);
+      return next;
+    case TaskRecurrenceType.MONTHLY:
+      next.setUTCMonth(next.getUTCMonth() + 1);
+      return next;
+    default:
+      return next;
+  }
+};
+
+const createTaskInstance = async (
+  tx: Prisma.TransactionClient,
+  input: {
+    title: string;
+    bank: number;
+    dueDate: Date | null;
+    pairId: string;
+    createdById: string;
+    assignedToId: string;
+    recurrenceType: TaskRecurrenceType;
+    recurrenceInterval: number | null;
+    recurrenceParentId: string | null;
+  }
+) => {
+  return tx.task.create({
+    data: {
+      title: input.title,
+      bank: input.bank,
+      status: TaskStatus.ACTIVE,
+      assignedToId: input.assignedToId,
+      createdById: input.createdById,
+      completionRequestedById: null,
+      pairId: input.pairId,
+      dueDate: input.dueDate,
+      recurrenceType: input.recurrenceType,
+      recurrenceInterval: input.recurrenceInterval,
+      recurrenceParentId: input.recurrenceParentId,
+    },
+    include: taskDetailsInclude,
+  });
+};
+
+const generateFutureRecurringTasks = async (
+  tx: Prisma.TransactionClient,
+  options: {
+    rootTaskId: string;
+    title: string;
+    bank: number;
+    pairId: string;
+    createdById: string;
+    assignedToId: string;
+    dueDate: Date;
+    recurrenceType: TaskRecurrenceType;
+    recurrenceInterval: number | null;
+  }
+) => {
+  if (options.recurrenceType === TaskRecurrenceType.NONE) {
+    return;
+  }
+
+  const horizon = getGenerationHorizon();
+  const relatedTasks = await tx.task.findMany({
+    where: {
+      OR: [
+        { id: options.rootTaskId },
+        { recurrenceParentId: options.rootTaskId },
+      ],
+    },
+    select: {
+      dueDate: true,
+    },
+    orderBy: {
+      dueDate: "asc",
+    },
+  });
+
+  const datedTasks = relatedTasks
+    .map((task) => task.dueDate)
+    .filter((date): date is Date => date instanceof Date)
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  let lastDate = datedTasks.length > 0 ? datedTasks[datedTasks.length - 1] : options.dueDate;
+
+  while (true) {
+    const nextDate = addRecurrence(lastDate, options.recurrenceType, options.recurrenceInterval);
+    if (nextDate.getTime() > horizon.getTime()) {
+      break;
+    }
+
+    const creator = await tx.user.findUnique({
+      where: { id: options.createdById },
+      select: { points: true },
+    });
+
+    if (!creator || creator.points < options.bank) {
+      break;
+    }
+
+    await tx.user.update({
+      where: { id: options.createdById },
+      data: {
+        points: {
+          decrement: options.bank,
+        },
+      },
+    });
+
+    await createTaskInstance(tx, {
+      title: options.title,
+      bank: options.bank,
+      dueDate: nextDate,
+      pairId: options.pairId,
+      createdById: options.createdById,
+      assignedToId: options.assignedToId,
+      recurrenceType: options.recurrenceType,
+      recurrenceInterval: options.recurrenceInterval,
+      recurrenceParentId: options.rootTaskId,
+    });
+
+    lastDate = nextDate;
+  }
+};
+
+const ensureRecurringTasksForPair = async (tx: Prisma.TransactionClient, pairId: string) => {
+  const recurringRoots = await tx.task.findMany({
+    where: {
+      pairId,
+      recurrenceType: {
+        not: TaskRecurrenceType.NONE,
+      },
+      recurrenceParentId: null,
+      dueDate: {
+        not: null,
+      },
+    },
+    select: {
+      id: true,
+      title: true,
+      bank: true,
+      pairId: true,
+      createdById: true,
+      assignedToId: true,
+      dueDate: true,
+      recurrenceType: true,
+      recurrenceInterval: true,
+    },
+  });
+
+  for (const task of recurringRoots) {
+    await generateFutureRecurringTasks(tx, {
+      rootTaskId: task.id,
+      title: task.title,
+      bank: task.bank,
+      pairId: task.pairId,
+      createdById: task.createdById,
+      assignedToId: task.assignedToId,
+      dueDate: task.dueDate!,
+      recurrenceType: task.recurrenceType,
+      recurrenceInterval: task.recurrenceInterval,
+    });
+  }
+};
+
 export const createTaskForUser = async (tx: Prisma.TransactionClient, input: TaskCreationInput) => {
-  const { userId, title, points, dueDate } = input;
+  const { userId, title, points, dueDate, recurrenceType, recurrenceInterval } = input;
   const user = await getUserContext(tx, userId);
-  const pairUsers = await getPairUsers(tx, user.pairId!);
+  const pairUsers = await getPairUsers(tx, user.pairId);
+
+  if (recurrenceType !== TaskRecurrenceType.NONE && !dueDate) {
+    throw new Error("RECURRENCE_DATE_REQUIRED");
+  }
 
   if (user.points < points) {
     throw new Error("INSUFFICIENT_POINTS");
@@ -157,23 +387,42 @@ export const createTaskForUser = async (tx: Prisma.TransactionClient, input: Tas
     },
   });
 
-  const task = await tx.task.create({
-    data: {
+  const task = await createTaskInstance(tx, {
+    title,
+    bank: points,
+    dueDate,
+    pairId: user.pairId,
+    createdById: userId,
+    assignedToId: partner.id,
+    recurrenceType,
+    recurrenceInterval,
+    recurrenceParentId: null,
+  });
+
+  if (recurrenceType !== TaskRecurrenceType.NONE && dueDate) {
+    await generateFutureRecurringTasks(tx, {
+      rootTaskId: task.id,
       title,
       bank: points,
-      status: TaskStatus.ACTIVE,
-      assignedToId: partner.id,
+      pairId: user.pairId,
       createdById: userId,
-      completionRequestedById: null,
-      pairId: user.pairId!,
+      assignedToId: partner.id,
       dueDate,
+      recurrenceType,
+      recurrenceInterval,
+    });
+  }
+
+  const refreshedUser = await tx.user.findUnique({
+    where: { id: userId },
+    select: {
+      points: true,
     },
-    include: taskDetailsInclude,
   });
 
   return {
     task,
-    currentUserPoints: updatedUser.points,
+    currentUserPoints: refreshedUser?.points ?? updatedUser.points,
   };
 };
 
@@ -234,6 +483,18 @@ const sendTaskError = (res: Response, error: unknown) => {
     if (error.message === "TASK_UPDATE_REQUIRED") {
       return res.status(400).json({ message: "Provide a title or due date to update" });
     }
+
+    if (error.message === "INVALID_RECURRENCE_TYPE") {
+      return res.status(400).json({ message: "Invalid recurrence type" });
+    }
+
+    if (error.message === "INVALID_RECURRENCE_INTERVAL") {
+      return res.status(400).json({ message: "Every X days recurrence needs a positive interval" });
+    }
+
+    if (error.message === "RECURRENCE_DATE_REQUIRED") {
+      return res.status(400).json({ message: "Recurring tasks require a due date" });
+    }
   }
 
   console.error("Task controller error:", error);
@@ -265,6 +526,25 @@ export const getTasks = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(400).json({ message: "You need to be connected to a pair first" });
     }
 
+    await prisma.$transaction(async (tx) => {
+      await ensureRecurringTasksForPair(tx, user.pairId!);
+    });
+
+    const pairUsers = await prisma.user.findMany({
+      where: { pairId: user.pairId },
+      select: {
+        id: true,
+        email: true,
+        nickname: true,
+        avatarKey: true,
+        points: true,
+      },
+    });
+
+    const partner = pairUsers.find((pairUser) => pairUser.id !== user.id) ?? null;
+
+    const refreshedUser = pairUsers.find((pairUser) => pairUser.id === user.id);
+
     const tasks = await prisma.task.findMany({
       where: { pairId: user.pairId },
       include: taskDetailsInclude,
@@ -273,7 +553,16 @@ export const getTasks = async (req: AuthenticatedRequest, res: Response) => {
 
     return res.json({
       currentUserId: user.id,
-      currentUserPoints: user.points,
+      currentUserPoints: refreshedUser?.points ?? user.points,
+      partner: partner
+        ? {
+            id: partner.id,
+            email: partner.email,
+            nickname: partner.nickname,
+            avatarKey: partner.avatarKey,
+            points: partner.points,
+          }
+        : null,
       tasks,
     });
   } catch (error) {
@@ -287,6 +576,8 @@ export const createTask = async (req: AuthenticatedRequest, res: Response) => {
     const title = normalizeTitle(String(req.body.title ?? ""));
     const points = Number(req.body.points);
     const dueDate = parseOptionalDate(req.body.dueDate);
+    const recurrenceType = parseRecurrenceType(req.body.recurrenceType);
+    const recurrenceInterval = parseRecurrenceInterval(recurrenceType, req.body.recurrenceInterval);
 
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -306,6 +597,8 @@ export const createTask = async (req: AuthenticatedRequest, res: Response) => {
         title,
         points,
         dueDate,
+        recurrenceType,
+        recurrenceInterval,
       })
     );
 
@@ -338,9 +631,13 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response) => {
 
     const result = await prisma.$transaction(async (tx) => {
       const user = await getUserContext(tx, userId);
-      const task = await getTaskForPair(tx, taskId, user.pairId!);
+      const task = await getTaskForPair(tx, taskId, user.pairId);
 
       ensureCreatorCanModify(task, userId);
+
+      if (task.recurrenceType !== TaskRecurrenceType.NONE && hasDueDate && !dueDate) {
+        throw new Error("RECURRENCE_DATE_REQUIRED");
+      }
 
       const updatedTask = await tx.task.update({
         where: { id: task.id },
@@ -374,7 +671,7 @@ export const deleteTask = async (req: AuthenticatedRequest, res: Response) => {
 
     const result = await prisma.$transaction(async (tx) => {
       const user = await getUserContext(tx, userId);
-      const task = await getTaskForPair(tx, taskId, user.pairId!);
+      const task = await getTaskForPair(tx, taskId, user.pairId);
 
       ensureCreatorCanModify(task, userId);
 
@@ -417,7 +714,7 @@ export const requestCompletion = async (req: AuthenticatedRequest, res: Response
 
     const result = await prisma.$transaction(async (tx) => {
       const user = await getUserContext(tx, userId);
-      const task = await getTaskForPair(tx, taskId, user.pairId!);
+      const task = await getTaskForPair(tx, taskId, user.pairId);
 
       ensureAssignedUserCanAct(task, userId);
 
@@ -453,7 +750,7 @@ export const confirmCompletion = async (req: AuthenticatedRequest, res: Response
 
     const result = await prisma.$transaction(async (tx) => {
       const user = await getUserContext(tx, userId);
-      const task = await getTaskForPair(tx, taskId, user.pairId!);
+      const task = await getTaskForPair(tx, taskId, user.pairId);
 
       if (task.status !== TaskStatus.WAITING_CONFIRMATION) {
         throw new Error("WAITING_CONFIRMATION_REQUIRED");
@@ -466,8 +763,6 @@ export const confirmCompletion = async (req: AuthenticatedRequest, res: Response
       if (task.completionRequestedById === userId || task.assignedToId === userId) {
         throw new Error("FORBIDDEN_CONFIRMATION");
       }
-
-      await getPairUsers(tx, user.pairId!);
 
       await tx.user.update({
         where: { id: task.completionRequestedById },
@@ -520,7 +815,7 @@ export const rejectCompletion = async (req: AuthenticatedRequest, res: Response)
 
     const result = await prisma.$transaction(async (tx) => {
       const user = await getUserContext(tx, userId);
-      const task = await getTaskForPair(tx, taskId, user.pairId!);
+      const task = await getTaskForPair(tx, taskId, user.pairId);
 
       if (task.status !== TaskStatus.WAITING_CONFIRMATION) {
         throw new Error("WAITING_CONFIRMATION_REQUIRED");
@@ -566,8 +861,8 @@ export const returnTask = async (req: AuthenticatedRequest, res: Response) => {
 
     const result = await prisma.$transaction(async (tx) => {
       const user = await getUserContext(tx, userId);
-      const pairUsers = await getPairUsers(tx, user.pairId!);
-      const task = await getTaskForPair(tx, taskId, user.pairId!);
+      const pairUsers = await getPairUsers(tx, user.pairId);
+      const task = await getTaskForPair(tx, taskId, user.pairId);
 
       ensureAssignedUserCanAct(task, userId);
 
@@ -623,8 +918,8 @@ export const failTask = async (req: AuthenticatedRequest, res: Response) => {
 
     const result = await prisma.$transaction(async (tx) => {
       const user = await getUserContext(tx, userId);
-      const pairUsers = await getPairUsers(tx, user.pairId!);
-      const task = await getTaskForPair(tx, taskId, user.pairId!);
+      const pairUsers = await getPairUsers(tx, user.pairId);
+      const task = await getTaskForPair(tx, taskId, user.pairId);
 
       ensureAssignedUserCanAct(task, userId);
 

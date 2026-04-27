@@ -4,10 +4,12 @@ import android.app.Application
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.data.local.TokenManager
 import com.vandoliak.coupleapp.data.remote.AuthRequest
 import com.vandoliak.coupleapp.data.remote.RetrofitInstance
 import com.vandoliak.coupleapp.data.remote.extractErrorMessage
+import com.vandoliak.coupleapp.presentation.util.appString
 import kotlinx.coroutines.launch
 
 class LoginViewModel(app: Application) : AndroidViewModel(app) {
@@ -38,7 +40,7 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 if (email.value.isBlank() || password.value.isBlank()) {
-                    error.value = "Email and password are required"
+                    error.value = appString(R.string.email_and_password_required)
                     return@launch
                 }
 
@@ -55,16 +57,17 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
 
                     token?.let {
                         tokenManager.saveSession(it, authResponse.user.pairId)
+                        RetrofitInstance.markSessionActive()
                         onSuccess(!authResponse.user.pairId.isNullOrBlank())
                     } ?: run {
-                        error.value = "Server returned an empty response"
+                        error.value = appString(R.string.server_empty_response)
                     }
                 } else {
-                    error.value = response.extractErrorMessage("Login failed")
+                    error.value = response.extractErrorMessage(appString(R.string.login_failed))
                 }
 
             } catch (e: Exception) {
-                error.value = e.message
+                error.value = e.message ?: appString(R.string.unknown_error)
             } finally {
                 isLoading.value = false
             }

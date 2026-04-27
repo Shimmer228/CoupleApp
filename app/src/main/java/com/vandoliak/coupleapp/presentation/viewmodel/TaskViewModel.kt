@@ -4,13 +4,16 @@ import android.app.Application
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.data.local.TokenManager
 import com.vandoliak.coupleapp.data.remote.RetrofitInstance
 import com.vandoliak.coupleapp.data.remote.TaskActionResponse
 import com.vandoliak.coupleapp.data.remote.TaskCreateRequest
 import com.vandoliak.coupleapp.data.remote.TaskDto
 import com.vandoliak.coupleapp.data.remote.TaskListResponse
+import com.vandoliak.coupleapp.data.remote.TaskPartnerDto
 import com.vandoliak.coupleapp.data.remote.extractErrorMessage
+import com.vandoliak.coupleapp.presentation.util.appString
 import com.vandoliak.coupleapp.presentation.util.dateInputToApiDate
 import com.vandoliak.coupleapp.presentation.util.sanitizeDateInput
 import kotlinx.coroutines.flow.first
@@ -30,6 +33,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     var dueDate = mutableStateOf("")
         private set
 
+    var recurrenceType = mutableStateOf("NONE")
+        private set
+
+    var recurrenceInterval = mutableStateOf("")
+        private set
+
     var tasks = mutableStateOf<List<TaskDto>>(emptyList())
         private set
 
@@ -37,6 +46,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     var currentUserPoints = mutableStateOf(0)
+        private set
+
+    var partner = mutableStateOf<TaskPartnerDto?>(null)
         private set
 
     var isLoading = mutableStateOf(false)
@@ -63,6 +75,17 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         dueDate.value = sanitizeDateInput(value)
     }
 
+    fun onRecurrenceTypeChange(value: String) {
+        recurrenceType.value = value
+        if (value != "EVERY_X_DAYS") {
+            recurrenceInterval.value = ""
+        }
+    }
+
+    fun onRecurrenceIntervalChange(value: String) {
+        recurrenceInterval.value = value.filter { it.isDigit() }
+    }
+
     fun loadTasks() {
         viewModelScope.launch {
             fetchTasks(showLoader = true)
@@ -72,32 +95,45 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun createTask() {
         val points = taskPoints.value.toIntOrNull()
         val apiDueDate = if (dueDate.value.isBlank()) null else dateInputToApiDate(dueDate.value)
+        val recurrenceIntervalValue = recurrenceInterval.value.toIntOrNull()
 
         if (taskTitle.value.isBlank()) {
-            error.value = "Task title is required"
+            error.value = appString(R.string.task_title_required)
             return
         }
 
         if (points == null || points <= 0) {
-            error.value = "Points must be a positive number"
+            error.value = appString(R.string.points_positive)
             return
         }
 
         if (dueDate.value.isNotBlank() && apiDueDate == null) {
-            error.value = "Due date must use YYYY-MM-DD format"
+            error.value = appString(R.string.due_date_format_required)
+            return
+        }
+
+        if (recurrenceType.value != "NONE" && apiDueDate == null) {
+            error.value = appString(R.string.recurring_challenges_require_due_date)
+            return
+        }
+
+        if (recurrenceType.value == "EVERY_X_DAYS" && (recurrenceIntervalValue == null || recurrenceIntervalValue <= 0)) {
+            error.value = appString(R.string.recurring_interval_positive)
             return
         }
 
         viewModelScope.launch {
             executeTaskMutation(
-                successText = "Challenge created successfully"
+                successText = appString(R.string.challenge_created_successfully)
             ) { authorization ->
                 RetrofitInstance.taskApi.createTask(
                     authorization = authorization,
                     request = TaskCreateRequest(
                         title = taskTitle.value.trim(),
                         points = points,
-                        dueDate = apiDueDate
+                        dueDate = apiDueDate,
+                        recurrenceType = recurrenceType.value,
+                        recurrenceInterval = recurrenceIntervalValue
                     )
                 )
             }
@@ -106,36 +142,38 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 taskTitle.value = ""
                 taskPoints.value = ""
                 dueDate.value = ""
+                recurrenceType.value = "NONE"
+                recurrenceInterval.value = ""
             }
         }
     }
 
     fun requestCompletion(taskId: String) {
-        runTaskAction(taskId, "Waiting for partner confirmation") { authorization, id ->
+        runTaskAction(taskId, appString(R.string.waiting_for_partner_confirmation)) { authorization, id ->
             RetrofitInstance.taskApi.requestCompletion(authorization, id)
         }
     }
 
     fun confirmCompletion(taskId: String) {
-        runTaskAction(taskId, "Task completed successfully") { authorization, id ->
+        runTaskAction(taskId, appString(R.string.task_completed_successfully)) { authorization, id ->
             RetrofitInstance.taskApi.confirmCompletion(authorization, id)
         }
     }
 
     fun rejectCompletion(taskId: String) {
-        runTaskAction(taskId, "Completion request rejected") { authorization, id ->
+        runTaskAction(taskId, appString(R.string.completion_request_rejected)) { authorization, id ->
             RetrofitInstance.taskApi.rejectCompletion(authorization, id)
         }
     }
 
     fun returnTask(taskId: String) {
-        runTaskAction(taskId, "Task returned successfully") { authorization, id ->
+        runTaskAction(taskId, appString(R.string.task_returned_successfully)) { authorization, id ->
             RetrofitInstance.taskApi.returnTask(authorization, id)
         }
     }
 
     fun failTask(taskId: String) {
-        runTaskAction(taskId, "Task failed") { authorization, id ->
+        runTaskAction(taskId, appString(R.string.task_failed_success)) { authorization, id ->
             RetrofitInstance.taskApi.failTask(authorization, id)
         }
     }
@@ -156,7 +194,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val token = tokenManager.tokenFlow.first()
 
         if (token.isNullOrBlank()) {
-            error.value = "Session expired. Please log in again"
+            error.value = appString(R.string.session_expired_login)
             return
         }
 
@@ -171,16 +209,16 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
                 val body = response.body()
 
                 if (body == null) {
-                    error.value = "Server returned an empty task list"
+                    error.value = appString(R.string.server_empty_task_list)
                     return
                 }
 
                 applyTaskState(body)
             } else {
-                error.value = response.extractErrorMessage("Failed to load tasks")
+                error.value = response.extractErrorMessage(appString(R.string.failed_to_load_tasks))
             }
         } catch (e: Exception) {
-            error.value = e.message ?: "Unknown error"
+            error.value = e.message ?: appString(R.string.unknown_error)
         } finally {
             if (showLoader) {
                 isLoading.value = false
@@ -195,7 +233,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         val token = tokenManager.tokenFlow.first()
 
         if (token.isNullOrBlank()) {
-            error.value = "Session expired. Please log in again"
+            error.value = appString(R.string.session_expired_login)
             return
         }
 
@@ -207,13 +245,13 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             val response = request("Bearer $token")
 
             if (!response.isSuccessful) {
-                error.value = response.extractErrorMessage("Task action failed")
+                error.value = response.extractErrorMessage(appString(R.string.task_action_failed))
                 return
             }
 
             val body = response.body()
             if (body == null) {
-                error.value = "Server returned an empty response"
+                error.value = appString(R.string.server_empty_response)
                 return
             }
 
@@ -221,7 +259,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             successMessage.value = successText
             fetchTasks(showLoader = false)
         } catch (e: Exception) {
-            error.value = e.message ?: "Unknown error"
+            error.value = e.message ?: appString(R.string.unknown_error)
         } finally {
             isSubmitting.value = false
         }
@@ -230,6 +268,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     private fun applyTaskState(body: TaskListResponse) {
         currentUserId.value = body.currentUserId
         currentUserPoints.value = body.currentUserPoints
+        partner.value = body.partner
         tasks.value = body.tasks
     }
 }

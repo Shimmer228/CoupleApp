@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.data.local.TokenManager
 import com.vandoliak.coupleapp.data.remote.EventCreateRequest
 import com.vandoliak.coupleapp.data.remote.EventDto
@@ -14,6 +15,7 @@ import com.vandoliak.coupleapp.data.remote.TaskDeleteResponse
 import com.vandoliak.coupleapp.data.remote.TaskDto
 import com.vandoliak.coupleapp.data.remote.TaskUpdateRequest
 import com.vandoliak.coupleapp.data.remote.extractErrorMessage
+import com.vandoliak.coupleapp.presentation.util.appString
 import com.vandoliak.coupleapp.presentation.util.dateInputToApiDate
 import com.vandoliak.coupleapp.presentation.util.isoDateToLocalDate
 import com.vandoliak.coupleapp.presentation.util.localDateToApiDate
@@ -45,7 +47,9 @@ data class CalendarItemUi(
     val assignedToLabel: String? = null,
     val status: String? = null,
     val completionRequestedById: String? = null,
-    val completionRequestedByLabel: String? = null
+    val completionRequestedByLabel: String? = null,
+    val recurrenceType: String? = null,
+    val recurrenceInterval: Int? = null
 )
 
 data class CalendarDayUi(
@@ -92,6 +96,12 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     var taskPoints = mutableStateOf("")
+        private set
+
+    var recurrenceType = mutableStateOf("NONE")
+        private set
+
+    var recurrenceInterval = mutableStateOf("")
         private set
 
     var isLoading = mutableStateOf(false)
@@ -152,15 +162,26 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
         taskPoints.value = value.filter { it.isDigit() }
     }
 
+    fun onRecurrenceTypeChange(value: String) {
+        recurrenceType.value = value
+        if (value != "EVERY_X_DAYS") {
+            recurrenceInterval.value = ""
+        }
+    }
+
+    fun onRecurrenceIntervalChange(value: String) {
+        recurrenceInterval.value = value.filter { it.isDigit() }
+    }
+
     fun createEventForSelectedDay() {
         if (eventTitle.value.isBlank()) {
-            error.value = "Event title is required"
+            error.value = appString(R.string.event_title_required)
             return
         }
 
         viewModelScope.launch {
             mutateWithRefresh(
-                successText = "Event added to ${selectedDate.value}",
+                successText = appString(R.string.event_added_to_date, selectedDate.value.toString()),
                 request = { authorization ->
                     RetrofitInstance.eventApi.createEvent(
                         authorization = authorization,
@@ -182,27 +203,35 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
 
     fun createTaskForSelectedDay() {
         val points = taskPoints.value.toIntOrNull()
+        val recurrenceIntervalValue = recurrenceInterval.value.toIntOrNull()
 
         if (taskTitle.value.isBlank()) {
-            error.value = "Task title is required"
+            error.value = appString(R.string.task_title_required)
             return
         }
 
         if (points == null || points <= 0) {
-            error.value = "Points must be a positive number"
+            error.value = appString(R.string.points_positive)
+            return
+        }
+
+        if (recurrenceType.value == "EVERY_X_DAYS" && (recurrenceIntervalValue == null || recurrenceIntervalValue <= 0)) {
+            error.value = appString(R.string.recurring_interval_positive)
             return
         }
 
         viewModelScope.launch {
             mutateTaskAction(
-                successText = "Task scheduled for ${selectedDate.value}",
+                successText = appString(R.string.task_scheduled_for_date, selectedDate.value.toString()),
                 request = { authorization ->
                     RetrofitInstance.taskApi.createTask(
                         authorization = authorization,
                         request = TaskCreateRequest(
                             title = taskTitle.value.trim(),
                             points = points,
-                            dueDate = localDateToApiDate(selectedDate.value)
+                            dueDate = localDateToApiDate(selectedDate.value),
+                            recurrenceType = recurrenceType.value,
+                            recurrenceInterval = recurrenceIntervalValue
                         )
                     )
                 }
@@ -211,6 +240,8 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
             if (error.value == null) {
                 taskTitle.value = ""
                 taskPoints.value = ""
+                recurrenceType.value = "NONE"
+                recurrenceInterval.value = ""
             }
         }
     }
@@ -225,18 +256,18 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
         val apiDate = dateInputToApiDate(dateInput)
 
         if (trimmedTitle.isBlank()) {
-            error.value = "Event title is required"
+            error.value = appString(R.string.event_title_required)
             return
         }
 
         if (apiDate == null) {
-            error.value = "Date must use YYYY-MM-DD format"
+            error.value = appString(R.string.date_format_required)
             return
         }
 
         viewModelScope.launch {
             mutateWithRefresh(
-                successText = "Event updated",
+                successText = appString(R.string.event_updated),
                 request = { authorization ->
                     RetrofitInstance.eventApi.updateEvent(
                         authorization = authorization,
@@ -255,7 +286,7 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteEvent(eventId: String) {
         viewModelScope.launch {
             mutateWithRefresh(
-                successText = "Event deleted",
+                successText = appString(R.string.event_deleted),
                 request = { authorization ->
                     RetrofitInstance.eventApi.deleteEvent(
                         authorization = authorization,
@@ -271,18 +302,18 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
         val apiDate = if (dateInput.isBlank()) null else dateInputToApiDate(dateInput)
 
         if (trimmedTitle.isBlank()) {
-            error.value = "Task title is required"
+            error.value = appString(R.string.task_title_required)
             return
         }
 
         if (dateInput.isNotBlank() && apiDate == null) {
-            error.value = "Date must use YYYY-MM-DD format"
+            error.value = appString(R.string.date_format_required)
             return
         }
 
         viewModelScope.launch {
             mutateTaskAction(
-                successText = "Task updated",
+                successText = appString(R.string.task_updated),
                 request = { authorization ->
                     RetrofitInstance.taskApi.updateTask(
                         authorization = authorization,
@@ -301,7 +332,7 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val token = tokenManager.tokenFlow.first()
             if (token.isNullOrBlank()) {
-                error.value = "Session expired. Please log in again"
+                error.value = appString(R.string.session_expired_login)
                 return@launch
             }
 
@@ -312,21 +343,21 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
 
                 val response = RetrofitInstance.taskApi.deleteTask("Bearer $token", taskId)
                 if (!response.isSuccessful) {
-                    error.value = response.extractErrorMessage("Failed to delete task")
+                    error.value = response.extractErrorMessage(appString(R.string.failed_to_delete_task))
                     return@launch
                 }
 
                 val body = response.body()
                 if (body == null) {
-                    error.value = "Server returned an empty response"
+                    error.value = appString(R.string.server_empty_response)
                     return@launch
                 }
 
                 applyTaskDelete(body)
-                successMessage.value = "Task deleted"
+                successMessage.value = appString(R.string.task_deleted)
                 loadData(showLoader = false)
             } catch (e: Exception) {
-                error.value = e.message ?: "Unknown error"
+                error.value = e.message ?: appString(R.string.unknown_error)
             } finally {
                 isSubmitting.value = false
             }
@@ -334,31 +365,31 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun requestTaskCompletion(taskId: String) {
-        runTaskAction(taskId, "Waiting for partner confirmation") { authorization, id ->
+        runTaskAction(taskId, appString(R.string.waiting_for_partner_confirmation)) { authorization, id ->
             RetrofitInstance.taskApi.requestCompletion(authorization, id)
         }
     }
 
     fun confirmTaskCompletion(taskId: String) {
-        runTaskAction(taskId, "Task completed successfully") { authorization, id ->
+        runTaskAction(taskId, appString(R.string.task_completed_successfully)) { authorization, id ->
             RetrofitInstance.taskApi.confirmCompletion(authorization, id)
         }
     }
 
     fun rejectTaskCompletion(taskId: String) {
-        runTaskAction(taskId, "Completion request rejected") { authorization, id ->
+        runTaskAction(taskId, appString(R.string.completion_request_rejected)) { authorization, id ->
             RetrofitInstance.taskApi.rejectCompletion(authorization, id)
         }
     }
 
     fun returnTask(taskId: String) {
-        runTaskAction(taskId, "Task returned successfully") { authorization, id ->
+        runTaskAction(taskId, appString(R.string.task_returned_successfully)) { authorization, id ->
             RetrofitInstance.taskApi.returnTask(authorization, id)
         }
     }
 
     fun failTask(taskId: String) {
-        runTaskAction(taskId, "Task failed") { authorization, id ->
+        runTaskAction(taskId, appString(R.string.task_failed_success)) { authorization, id ->
             RetrofitInstance.taskApi.failTask(authorization, id)
         }
     }
@@ -378,7 +409,7 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun loadData(showLoader: Boolean) {
         val token = tokenManager.tokenFlow.first()
         if (token.isNullOrBlank()) {
-            error.value = "Session expired. Please log in again"
+            error.value = appString(R.string.session_expired_login)
             return
         }
 
@@ -391,19 +422,19 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
             val authorization = "Bearer $token"
             val tasksResponse = RetrofitInstance.taskApi.getTasks(authorization)
             if (!tasksResponse.isSuccessful) {
-                error.value = tasksResponse.extractErrorMessage("Failed to load tasks")
+                error.value = tasksResponse.extractErrorMessage(appString(R.string.failed_to_load_tasks))
                 return
             }
 
             val eventsResponse = RetrofitInstance.eventApi.getAllEvents(authorization)
             if (!eventsResponse.isSuccessful) {
-                error.value = eventsResponse.extractErrorMessage("Failed to load events")
+                error.value = eventsResponse.extractErrorMessage(appString(R.string.failed_to_load_events))
                 return
             }
 
             val taskBody = tasksResponse.body()
             if (taskBody == null) {
-                error.value = "Server returned an empty task list"
+                error.value = appString(R.string.server_empty_task_list)
                 return
             }
 
@@ -412,7 +443,7 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
             allEvents = eventsResponse.body()?.events.orEmpty()
             rebuildCalendarState()
         } catch (e: Exception) {
-            error.value = e.message ?: "Unknown error"
+            error.value = e.message ?: appString(R.string.unknown_error)
         } finally {
             if (showLoader) {
                 isLoading.value = false
@@ -426,7 +457,7 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     ) {
         val token = tokenManager.tokenFlow.first()
         if (token.isNullOrBlank()) {
-            error.value = "Session expired. Please log in again"
+            error.value = appString(R.string.session_expired_login)
             return
         }
 
@@ -437,14 +468,14 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
 
             val response = request("Bearer $token")
             if (!response.isSuccessful) {
-                error.value = response.extractErrorMessage("Calendar action failed")
+                error.value = response.extractErrorMessage(appString(R.string.calendar_action_failed))
                 return
             }
 
             successMessage.value = successText
             loadData(showLoader = false)
         } catch (e: Exception) {
-            error.value = e.message ?: "Unknown error"
+            error.value = e.message ?: appString(R.string.unknown_error)
         } finally {
             isSubmitting.value = false
         }
@@ -456,7 +487,7 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     ) {
         val token = tokenManager.tokenFlow.first()
         if (token.isNullOrBlank()) {
-            error.value = "Session expired. Please log in again"
+            error.value = appString(R.string.session_expired_login)
             return
         }
 
@@ -467,14 +498,14 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
 
             val response = request("Bearer $token")
             if (!response.isSuccessful) {
-                error.value = response.extractErrorMessage("Task action failed")
+                error.value = response.extractErrorMessage(appString(R.string.task_action_failed))
                 return
             }
 
             successMessage.value = successText
             loadData(showLoader = false)
         } catch (e: Exception) {
-            error.value = e.message ?: "Unknown error"
+            error.value = e.message ?: appString(R.string.unknown_error)
         } finally {
             isSubmitting.value = false
         }
@@ -518,7 +549,7 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
                 sourceId = task.id,
                 title = task.title,
                 type = CalendarItemType.TASK,
-                supportingText = "Bank: ${task.bank} pts",
+                supportingText = appString(R.string.bank_points_format, task.bank),
                 date = taskDate,
                 description = null,
                 defaultPoints = task.bank,
@@ -528,7 +559,9 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
                 assignedToLabel = task.assignedTo.email,
                 status = task.status,
                 completionRequestedById = task.completionRequestedBy?.id,
-                completionRequestedByLabel = task.completionRequestedBy?.email
+                completionRequestedByLabel = task.completionRequestedBy?.email,
+                recurrenceType = task.recurrenceType,
+                recurrenceInterval = task.recurrenceInterval
             )
         }
 
@@ -539,7 +572,7 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
                 sourceId = event.id,
                 title = event.title,
                 type = CalendarItemType.EVENT,
-                supportingText = event.description ?: "Event",
+                supportingText = event.description ?: appString(R.string.event_label),
                 date = eventDate,
                 description = event.description,
                 defaultPoints = null,

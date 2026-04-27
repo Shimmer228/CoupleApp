@@ -38,6 +38,12 @@ class TokenManager(private val context: Context) {
         }
     }
 
+    suspend fun clearPairId() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(PAIR_ID_KEY)
+        }
+    }
+
     suspend fun clearSession() {
         context.dataStore.edit { prefs ->
             prefs.remove(TOKEN_KEY)

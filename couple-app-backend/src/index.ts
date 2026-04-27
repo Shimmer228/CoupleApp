@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import path from "path";
 import authRoutes from "./routes/auth.routes";
 import pairRoutes from "./routes/pair.routes";
 import taskRoutes from "./routes/task.routes";
@@ -10,13 +11,16 @@ import wishlistRoutes from "./routes/wishlist.routes";
 import profileRoutes from "./routes/profile.routes";
 import rewardRoutes from "./routes/reward.routes";
 import blueprintRoutes from "./routes/blueprint.routes";
+import { ensureAvatarUploadDir } from "./utils/avatar-storage";
 
 dotenv.config();
 
 const app = express();
+ensureAvatarUploadDir();
 
 app.use(cors());
 app.use(express.json());
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use("/api/auth", authRoutes);
 app.use("/api/pair", pairRoutes);
 app.use("/api/tasks", taskRoutes);

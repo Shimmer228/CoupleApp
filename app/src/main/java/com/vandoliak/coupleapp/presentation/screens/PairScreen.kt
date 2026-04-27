@@ -16,9 +16,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.presentation.viewmodel.PairViewModel
 
 @Composable
@@ -40,14 +42,14 @@ fun PairScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Pair Setup",
+            text = stringResource(R.string.pair_setup),
             style = MaterialTheme.typography.headlineMedium
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "Create a pair to receive a join code, or enter your partner's code to connect.",
+            text = stringResource(R.string.pair_setup_subtitle),
             style = MaterialTheme.typography.bodyLarge
         )
 
@@ -61,7 +63,7 @@ fun PairScreen(
                     modifier = Modifier.padding(16.dp)
                 ) {
                     Text(
-                        text = "Your pair code",
+                        text = stringResource(R.string.your_pair_code),
                         style = MaterialTheme.typography.titleMedium
                     )
 
@@ -75,7 +77,7 @@ fun PairScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Share this code with your partner, then continue to Home.",
+                        text = stringResource(R.string.pair_code_share_hint),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -89,7 +91,7 @@ fun PairScreen(
             modifier = Modifier.fillMaxWidth(),
             enabled = !viewModel.isLoading.value && viewModel.currentPairId.value == null
         ) {
-            Text(if (viewModel.isLoading.value) "Loading..." else "Create Pair")
+            Text(if (viewModel.isLoading.value) stringResource(R.string.loading) else stringResource(R.string.create_pair))
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -97,7 +99,7 @@ fun PairScreen(
         OutlinedTextField(
             value = viewModel.joinCode.value,
             onValueChange = viewModel::onJoinCodeChange,
-            label = { Text("Join code") },
+            label = { Text(stringResource(R.string.join_code)) },
             modifier = Modifier.fillMaxWidth(),
             enabled = !viewModel.isLoading.value && viewModel.currentPairId.value == null
         )
@@ -109,10 +111,10 @@ fun PairScreen(
             modifier = Modifier.fillMaxWidth(),
             enabled = !viewModel.isLoading.value && viewModel.currentPairId.value == null
         ) {
-            Text(if (viewModel.isLoading.value) "Loading..." else "Join Pair")
+            Text(if (viewModel.isLoading.value) stringResource(R.string.loading) else stringResource(R.string.join_pair))
         }
 
-        viewModel.error.value?.let {
+        viewModel.error.value?.takeIf { it.isNotBlank() }?.let {
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = it,
@@ -120,7 +122,7 @@ fun PairScreen(
             )
         }
 
-        viewModel.successMessage.value?.let {
+        viewModel.successMessage.value?.takeIf { it.isNotBlank() }?.let {
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = it,
@@ -137,7 +139,7 @@ fun PairScreen(
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Continue to Home")
+                Text(stringResource(R.string.continue_to_home))
             }
         }
     }

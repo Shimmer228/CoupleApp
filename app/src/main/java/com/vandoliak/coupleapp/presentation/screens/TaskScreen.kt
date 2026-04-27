@@ -3,6 +3,7 @@ package com.vandoliak.coupleapp.presentation.screens
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,17 +20,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.data.remote.TaskDto
 import com.vandoliak.coupleapp.presentation.components.AppCard
 import com.vandoliak.coupleapp.presentation.components.EmptyState
 import com.vandoliak.coupleapp.presentation.components.PrimaryActionButton
 import com.vandoliak.coupleapp.presentation.components.SectionTitle
+import com.vandoliak.coupleapp.presentation.components.SelectionChip
 import com.vandoliak.coupleapp.presentation.util.formatIsoDateForDisplay
+import com.vandoliak.coupleapp.presentation.util.recurrenceLabel
+import com.vandoliak.coupleapp.presentation.util.taskStatusLabel
 import com.vandoliak.coupleapp.presentation.viewmodel.TaskViewModel
 
 @Composable
@@ -63,31 +69,49 @@ fun TaskScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         SectionTitle(
-            title = "Arena",
-            subtitle = "Manage live challenges while Calendar stays your planning view."
+            title = stringResource(R.string.challenges_title),
+            subtitle = stringResource(R.string.challenges_subtitle)
         )
 
         AppCard {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Your points: ${viewModel.currentUserPoints.value}",
+                    text = stringResource(R.string.your_points_format, viewModel.currentUserPoints.value),
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(
-                    text = "Create a challenge, track what is assigned to you, and confirm partner wins.",
+                    text = stringResource(R.string.challenges_overview_subtitle),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
         AppCard {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = stringResource(R.string.my_points_format, viewModel.currentUserPoints.value),
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = viewModel.partner.value?.let {
+                        val label = it.nickname ?: it.email
+                        stringResource(R.string.partner_points_format, label, it.points)
+                    } ?: stringResource(R.string.partner_points_unavailable),
+                    color = MaterialTheme.colorScheme.tertiary,
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+        }
+
+        AppCard {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SectionTitle(title = "Create Challenge")
+                SectionTitle(title = stringResource(R.string.create_challenge_title))
 
                 OutlinedTextField(
                     value = viewModel.taskTitle.value,
                     onValueChange = viewModel::onTaskTitleChange,
-                    label = { Text("Title") },
+                    label = { Text(stringResource(R.string.title)) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !viewModel.isSubmitting.value
                 )
@@ -95,7 +119,7 @@ fun TaskScreen(
                 OutlinedTextField(
                     value = viewModel.taskPoints.value,
                     onValueChange = viewModel::onTaskPointsChange,
-                    label = { Text("Points") },
+                    label = { Text(stringResource(R.string.points)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !viewModel.isSubmitting.value
@@ -104,27 +128,35 @@ fun TaskScreen(
                 OutlinedTextField(
                     value = viewModel.dueDate.value,
                     onValueChange = viewModel::onDueDateChange,
-                    label = { Text("Due date (YYYY-MM-DD)") },
+                    label = { Text(stringResource(R.string.due_date_label)) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !viewModel.isSubmitting.value
                 )
 
+                RecurrenceSelector(
+                    recurrenceType = viewModel.recurrenceType.value,
+                    recurrenceInterval = viewModel.recurrenceInterval.value,
+                    isSubmitting = viewModel.isSubmitting.value,
+                    onRecurrenceTypeChange = viewModel::onRecurrenceTypeChange,
+                    onRecurrenceIntervalChange = viewModel::onRecurrenceIntervalChange
+                )
+
                 PrimaryActionButton(
-                    text = if (viewModel.isSubmitting.value) "Creating..." else "Create Challenge",
+                    text = if (viewModel.isSubmitting.value) stringResource(R.string.creating) else stringResource(R.string.create_challenge_button),
                     onClick = viewModel::createTask,
                     enabled = !viewModel.isSubmitting.value
                 )
             }
         }
 
-        viewModel.error.value?.let {
+        viewModel.error.value?.takeIf { it.isNotBlank() }?.let {
             Text(
                 text = it,
                 color = MaterialTheme.colorScheme.error
             )
         }
 
-        viewModel.successMessage.value?.let {
+        viewModel.successMessage.value?.takeIf { it.isNotBlank() }?.let {
             Text(
                 text = it,
                 color = MaterialTheme.colorScheme.primary
@@ -133,19 +165,19 @@ fun TaskScreen(
 
         if (viewModel.isLoading.value && tasks.isEmpty()) {
             EmptyState(
-                title = "Loading arena",
-                subtitle = "Fetching the latest challenges for your pair."
+                title = stringResource(R.string.loading_challenges_title),
+                subtitle = stringResource(R.string.loading_challenges_subtitle)
             )
             Spacer(modifier = Modifier.height(8.dp))
             return@Column
         }
 
         ArenaSection(
-            title = "Assigned to Me",
-            subtitle = "Challenges I can finish, return, or fail.",
+            title = stringResource(R.string.assigned_to_me_title),
+            subtitle = stringResource(R.string.assigned_to_me_subtitle),
             tasks = assignedToMe,
-            emptyTitle = "Nothing assigned right now",
-            emptySubtitle = "New challenges from your partner will appear here.",
+            emptyTitle = stringResource(R.string.assigned_to_me_empty_title),
+            emptySubtitle = stringResource(R.string.assigned_to_me_empty_subtitle),
             currentUserId = currentUserId,
             isSubmitting = viewModel.isSubmitting.value,
             onRequestCompletion = viewModel::requestCompletion,
@@ -156,11 +188,11 @@ fun TaskScreen(
         )
 
         ArenaSection(
-            title = "Created by Me",
-            subtitle = "Live challenges waiting on my partner.",
+            title = stringResource(R.string.created_by_me_title),
+            subtitle = stringResource(R.string.created_by_me_subtitle),
             tasks = createdByMe,
-            emptyTitle = "No active challenges from you",
-            emptySubtitle = "Create a new one above when you're ready.",
+            emptyTitle = stringResource(R.string.created_by_me_empty_title),
+            emptySubtitle = stringResource(R.string.created_by_me_empty_subtitle),
             currentUserId = currentUserId,
             isSubmitting = viewModel.isSubmitting.value,
             onRequestCompletion = viewModel::requestCompletion,
@@ -171,11 +203,11 @@ fun TaskScreen(
         )
 
         ArenaSection(
-            title = "Waiting for Partner Confirmation",
-            subtitle = "I already requested completion.",
+            title = stringResource(R.string.waiting_for_partner_title),
+            subtitle = stringResource(R.string.waiting_for_partner_subtitle),
             tasks = waitingForPartner,
-            emptyTitle = "No pending confirmations from you",
-            emptySubtitle = "Request completion from an active challenge to see it here.",
+            emptyTitle = stringResource(R.string.waiting_for_partner_empty_title),
+            emptySubtitle = stringResource(R.string.waiting_for_partner_empty_subtitle),
             currentUserId = currentUserId,
             isSubmitting = viewModel.isSubmitting.value,
             onRequestCompletion = viewModel::requestCompletion,
@@ -186,11 +218,11 @@ fun TaskScreen(
         )
 
         ArenaSection(
-            title = "Waiting for My Decision",
-            subtitle = "Partner asked me to confirm completion.",
+            title = stringResource(R.string.waiting_for_my_decision_title),
+            subtitle = stringResource(R.string.waiting_for_my_decision_subtitle),
             tasks = waitingForMyDecision,
-            emptyTitle = "No partner confirmations pending",
-            emptySubtitle = "When your partner requests completion, it will show up here.",
+            emptyTitle = stringResource(R.string.waiting_for_my_decision_empty_title),
+            emptySubtitle = stringResource(R.string.waiting_for_my_decision_empty_subtitle),
             currentUserId = currentUserId,
             isSubmitting = viewModel.isSubmitting.value,
             onRequestCompletion = viewModel::requestCompletion,
@@ -201,11 +233,11 @@ fun TaskScreen(
         )
 
         ArenaSection(
-            title = "History",
-            subtitle = "Completed and failed challenges.",
+            title = stringResource(R.string.challenge_history_title),
+            subtitle = stringResource(R.string.challenge_history_subtitle),
             tasks = history,
-            emptyTitle = "No history yet",
-            emptySubtitle = "Resolved challenges will appear here.",
+            emptyTitle = stringResource(R.string.challenge_history_empty_title),
+            emptySubtitle = stringResource(R.string.challenge_history_empty_subtitle),
             currentUserId = currentUserId,
             isSubmitting = viewModel.isSubmitting.value,
             onRequestCompletion = viewModel::requestCompletion,
@@ -268,6 +300,7 @@ private fun TaskItem(
     onReturn: () -> Unit,
     onFail: () -> Unit
 ) {
+    val context = LocalContext.current
     val isAssignedToCurrentUser = currentUserId == task.assignedTo.id
     val isCreatedByCurrentUser = currentUserId == task.createdBy.id
     val completionRequestedByCurrentUser = currentUserId == task.completionRequestedBy?.id
@@ -280,21 +313,22 @@ private fun TaskItem(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Text(text = "Bank: ${task.bank} points")
-            Text(text = "Status: ${formatTaskStatus(task.status, completionRequestedByCurrentUser)}")
-            Text(text = "Created by: ${task.createdBy.email}")
-            Text(text = "Assigned to: ${task.assignedTo.email}")
+            Text(text = stringResource(R.string.bank_points_format, task.bank))
+            Text(text = stringResource(R.string.status_format, context.taskStatusLabel(task.status, completionRequestedByCurrentUser)))
+            Text(text = stringResource(R.string.created_by, task.createdBy.email))
+            Text(text = stringResource(R.string.assigned_to_format, task.assignedTo.email))
             task.completionRequestedBy?.let {
-                Text(text = "Completion requested by: ${it.email}")
+                Text(text = stringResource(R.string.completion_requested_by_format, it.email))
             }
             dueDate?.let {
-                Text(text = "Due date: $it")
+                Text(text = stringResource(R.string.due_date_format, it))
             }
+            Text(text = stringResource(R.string.recurrence_format, context.recurrenceLabel(task.recurrenceType, task.recurrenceInterval)))
 
             when {
                 task.status == "ACTIVE" && isAssignedToCurrentUser -> {
                     PrimaryActionButton(
-                        text = "Request Complete",
+                        text = stringResource(R.string.request_complete),
                         onClick = onRequestCompletion,
                         enabled = !isSubmitting
                     )
@@ -303,25 +337,25 @@ private fun TaskItem(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !isSubmitting
                     ) {
-                        Text("Return")
+                        Text(stringResource(R.string.return_task))
                     }
                     OutlinedButton(
                         onClick = onFail,
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !isSubmitting
                     ) {
-                        Text("Fail")
+                        Text(stringResource(R.string.fail_task))
                     }
                 }
 
                 task.status == "WAITING_CONFIRMATION" && !completionRequestedByCurrentUser -> {
                     Text(
-                        text = "Partner requested completion",
+                        text = stringResource(R.string.partner_requested_completion),
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.bodySmall
                     )
                     PrimaryActionButton(
-                        text = "Confirm",
+                        text = stringResource(R.string.confirm),
                         onClick = onConfirmCompletion,
                         enabled = !isSubmitting
                     )
@@ -330,13 +364,13 @@ private fun TaskItem(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !isSubmitting
                     ) {
-                        Text("Reject")
+                        Text(stringResource(R.string.reject))
                     }
                 }
 
                 task.status == "WAITING_CONFIRMATION" && completionRequestedByCurrentUser -> {
                     Text(
-                        text = "Waiting for partner confirmation",
+                        text = stringResource(R.string.waiting_for_partner_confirmation),
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -344,7 +378,7 @@ private fun TaskItem(
 
                 task.status == "ACTIVE" && isCreatedByCurrentUser -> {
                     Text(
-                        text = "Challenge is active and waiting on your partner.",
+                        text = stringResource(R.string.challenge_active_waiting_partner),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -354,10 +388,51 @@ private fun TaskItem(
     }
 }
 
-private fun formatTaskStatus(status: String, requestedByCurrentUser: Boolean): String {
-    return when {
-        status == "WAITING_CONFIRMATION" && requestedByCurrentUser -> "Waiting for partner confirmation"
-        status == "WAITING_CONFIRMATION" -> "Partner requested completion"
-        else -> status.lowercase().replaceFirstChar { it.uppercase() }
+@Composable
+private fun RecurrenceSelector(
+    recurrenceType: String,
+    recurrenceInterval: String,
+    isSubmitting: Boolean,
+    onRecurrenceTypeChange: (String) -> Unit,
+    onRecurrenceIntervalChange: (String) -> Unit
+) {
+    val context = LocalContext.current
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionTitle(
+            title = stringResource(R.string.recurrence_title),
+            subtitle = stringResource(R.string.recurrence_subtitle)
+        )
+
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(
+                "NONE",
+                "EVERY_X_DAYS",
+                "WEEKLY",
+                "MONTHLY"
+            ).forEach { value ->
+                SelectionChip(
+                    label = context.recurrenceLabel(value),
+                    selected = recurrenceType == value,
+                    onClick = { onRecurrenceTypeChange(value) },
+                    enabled = !isSubmitting
+                )
+            }
+        }
+
+        if (recurrenceType == "EVERY_X_DAYS") {
+            OutlinedTextField(
+                value = recurrenceInterval,
+                onValueChange = onRecurrenceIntervalChange,
+                label = { Text(stringResource(R.string.interval_in_days)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isSubmitting
+            )
+        }
     }
 }

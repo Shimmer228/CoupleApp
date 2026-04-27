@@ -6,6 +6,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 
 data class WishlistCreateRequest(
@@ -17,7 +18,16 @@ data class WishlistCreateRequest(
 )
 
 data class WishlistPurchaseRequest(
-    val createTransaction: Boolean
+    val createTransaction: Boolean,
+    val transactionCategory: String? = null
+)
+
+data class WishlistUpdateRequest(
+    val title: String,
+    val url: String?,
+    val price: Double?,
+    val priority: String,
+    val category: String
 )
 
 data class WishlistUserDto(
@@ -73,6 +83,13 @@ interface WishlistApi {
         @Path("id") id: String,
         @Body request: WishlistPurchaseRequest
     ): Response<WishlistPurchaseResponse>
+
+    @PUT("api/wishlist/{id}")
+    suspend fun updateItem(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+        @Body request: WishlistUpdateRequest
+    ): Response<WishlistCreateResponse>
 
     @DELETE("api/wishlist/{id}")
     suspend fun deleteItem(

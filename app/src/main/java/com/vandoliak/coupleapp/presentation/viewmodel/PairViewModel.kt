@@ -4,11 +4,13 @@ import android.app.Application
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.data.local.TokenManager
 import com.vandoliak.coupleapp.data.remote.JoinPairRequest
 import com.vandoliak.coupleapp.data.remote.PairResponse
 import com.vandoliak.coupleapp.data.remote.RetrofitInstance
 import com.vandoliak.coupleapp.data.remote.extractErrorMessage
+import com.vandoliak.coupleapp.presentation.util.appString
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import retrofit2.Response
@@ -53,7 +55,7 @@ class PairViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             executePairRequest(
                 emptyCodeMessage = null,
-                successText = "Pair created successfully"
+                successText = appString(R.string.pair_created_success)
             ) { authorization ->
                 RetrofitInstance.pairApi.createPair(authorization)
             }
@@ -63,8 +65,8 @@ class PairViewModel(app: Application) : AndroidViewModel(app) {
     fun joinPair(onSuccess: () -> Unit) {
         viewModelScope.launch {
             executePairRequest(
-                emptyCodeMessage = "Enter a join code",
-                successText = "Pair joined successfully"
+                emptyCodeMessage = appString(R.string.enter_join_code),
+                successText = appString(R.string.pair_joined_success)
             ) { authorization ->
                 RetrofitInstance.pairApi.joinPair(
                     authorization = authorization,
@@ -82,7 +84,7 @@ class PairViewModel(app: Application) : AndroidViewModel(app) {
         request: suspend (String) -> Response<PairResponse>
     ): String? {
         if (currentPairId.value != null) {
-            successMessage.value = "Pair is already connected"
+            successMessage.value = appString(R.string.pair_already_connected)
             return currentPairId.value
         }
 
@@ -101,20 +103,20 @@ class PairViewModel(app: Application) : AndroidViewModel(app) {
 
             val token = tokenManager.tokenFlow.first()
             if (token.isNullOrBlank()) {
-                error.value = "Session expired. Please log in again"
+                error.value = appString(R.string.session_expired_login)
                 return null
             }
 
             val response = request("Bearer $token")
             if (!response.isSuccessful) {
-                error.value = response.extractErrorMessage("Pair request failed")
+                error.value = response.extractErrorMessage(appString(R.string.pair_request_failed))
                 return null
             }
 
             val body = response.body()
             val pairId = body?.pairId
             if (pairId.isNullOrBlank()) {
-                error.value = "Server returned an empty pair code"
+                error.value = appString(R.string.server_empty_pair_code)
                 return null
             }
 
@@ -124,7 +126,7 @@ class PairViewModel(app: Application) : AndroidViewModel(app) {
             successMessage.value = successText
             pairId
         } catch (e: Exception) {
-            error.value = e.message ?: "Unknown error"
+            error.value = e.message ?: appString(R.string.unknown_error)
             null
         } finally {
             isLoading.value = false

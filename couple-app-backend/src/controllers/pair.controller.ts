@@ -154,3 +154,67 @@ export const joinPair = async (req: AuthenticatedRequest, res: Response) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
+
+export const leavePair = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          pairId: true,
+        },
+      });
+
+      if (!user) {
+        return null;
+      }
+
+      if (!user.pairId) {
+        throw new Error("PAIR_REQUIRED");
+      }
+
+      const pairId = user.pairId;
+
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          pairId: null,
+        },
+      });
+
+      const remainingMembers = await tx.user.count({
+        where: { pairId },
+      });
+
+      if (remainingMembers === 0) {
+        await tx.pair.delete({
+          where: { id: pairId },
+        });
+      }
+
+      return { pairId };
+    });
+
+    if (!result) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.json({
+      leftPair: true,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "PAIR_REQUIRED") {
+      return res.status(400).json({ message: "You are not connected to a pair" });
+    }
+
+    console.error("Leave pair error:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};

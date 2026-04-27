@@ -1,21 +1,48 @@
 package com.vandoliak.coupleapp.data.remote
 
+import android.content.Context
+import com.vandoliak.coupleapp.data.local.SessionDestination
+import com.vandoliak.coupleapp.data.local.SessionEvents
+import com.vandoliak.coupleapp.data.local.TokenManager
+import kotlinx.coroutines.runBlocking
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import java.util.concurrent.atomic.AtomicBoolean
 
 object RetrofitInstance {
 
     //private const val BASE_URL = "http://10.0.2.2:5000/"
     private const val BASE_URL = "http://localhost:5000/"
+
+    private lateinit var appContext: Context
+    private val didTriggerLogout = AtomicBoolean(false)
+
     private val logging = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY
     }
 
-    private val client = OkHttpClient.Builder()
-        .addInterceptor(logging)
-        .build()
+    private val authInterceptor = Interceptor { chain ->
+        val response = chain.proceed(chain.request())
+        handleAuthFailure(response)
+        response
+    }
+
+    fun initialize(context: Context) {
+        if (!::appContext.isInitialized) {
+            appContext = context.applicationContext
+        }
+    }
+
+    private val client: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .addInterceptor(logging)
+            .addInterceptor(authInterceptor)
+            .build()
+    }
 
     private val retrofit: Retrofit by lazy {
         Retrofit.Builder()
@@ -23,6 +50,32 @@ object RetrofitInstance {
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
+    }
+
+    private fun handleAuthFailure(response: Response) {
+        val bodyMessage = try {
+            response.peekBody(Long.MAX_VALUE).string()
+        } catch (_: Exception) {
+            ""
+        }
+
+        val isExpired = response.code == 401 ||
+            bodyMessage.contains("invalid or expired token", ignoreCase = true)
+
+        if (!isExpired || !::appContext.isInitialized) {
+            return
+        }
+
+        if (didTriggerLogout.compareAndSet(false, true)) {
+            runBlocking {
+                TokenManager(appContext).clearSession()
+            }
+            SessionEvents.emit(SessionDestination.LOGIN)
+        }
+    }
+
+    fun markSessionActive() {
+        didTriggerLogout.set(false)
     }
 
     val authApi: AuthApi by lazy {
@@ -59,5 +112,19 @@ object RetrofitInstance {
 
     val blueprintApi: BlueprintApi by lazy {
         retrofit.create(BlueprintApi::class.java)
+    }
+
+    fun resolveUrl(rawUrl: String?): String? {
+        val value = rawUrl?.trim().orEmpty()
+        if (value.isBlank()) {
+            return null
+        }
+
+        if (value.startsWith("http://") || value.startsWith("https://")) {
+            return value
+        }
+
+        val normalizedPath = if (value.startsWith("/")) value.drop(1) else value
+        return BASE_URL + normalizedPath
     }
 }

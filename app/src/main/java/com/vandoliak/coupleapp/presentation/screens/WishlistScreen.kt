@@ -1,8 +1,11 @@
 package com.vandoliak.coupleapp.presentation.screens
 
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,23 +21,33 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vandoliak.coupleapp.R
+import com.vandoliak.coupleapp.data.local.AppCurrency
+import com.vandoliak.coupleapp.data.local.AppSettingsManager
 import com.vandoliak.coupleapp.data.remote.WishlistItemDto
 import com.vandoliak.coupleapp.presentation.components.AppCard
 import com.vandoliak.coupleapp.presentation.components.EmptyState
 import com.vandoliak.coupleapp.presentation.components.PrimaryActionButton
 import com.vandoliak.coupleapp.presentation.components.SectionTitle
+import com.vandoliak.coupleapp.presentation.components.SelectionChip
+import com.vandoliak.coupleapp.presentation.util.formatCurrency
+import com.vandoliak.coupleapp.presentation.util.priorityLabel
+import com.vandoliak.coupleapp.presentation.util.scopeLabel
+import com.vandoliak.coupleapp.presentation.util.transactionCategoryLabel
 import com.vandoliak.coupleapp.presentation.viewmodel.WishlistViewModel
-import java.util.Locale
 
 @Composable
 fun WishlistScreen(
@@ -46,7 +59,13 @@ fun WishlistScreen(
             context.applicationContext as Application
         )
     )
+    val settingsManager = remember(context) { AppSettingsManager(context.applicationContext) }
+    val currency by settingsManager.currencyFlow.collectAsState(initial = AppCurrency.UAH)
     var purchaseDialogItem by remember { mutableStateOf<WishlistItemDto?>(null) }
+    var categoryDialogItem by remember { mutableStateOf<WishlistItemDto?>(null) }
+    var editingItem by remember { mutableStateOf<WishlistItemDto?>(null) }
+    var deletingItem by remember { mutableStateOf<WishlistItemDto?>(null) }
+    var selectedExpenseCategory by rememberSaveable { mutableStateOf("SHOPPING") }
 
     LaunchedEffect(Unit) {
         viewModel.loadWishlist()
@@ -55,16 +74,17 @@ fun WishlistScreen(
     purchaseDialogItem?.let { item ->
         AlertDialog(
             onDismissRequest = { purchaseDialogItem = null },
-            title = { Text("Create expense from this item?") },
-            text = { Text("You can also add this purchase straight into Finance.") },
+            title = { Text(stringResource(R.string.create_expense_from_item)) },
+            text = { Text(stringResource(R.string.wishlist_purchase_finance_hint)) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         purchaseDialogItem = null
-                        viewModel.purchaseItem(item.id, createTransaction = true)
+                        selectedExpenseCategory = "SHOPPING"
+                        categoryDialogItem = item
                     }
                 ) {
-                    Text("Yes")
+                    Text(stringResource(R.string.yes))
                 }
             },
             dismissButton = {
@@ -74,7 +94,113 @@ fun WishlistScreen(
                         viewModel.purchaseItem(item.id, createTransaction = false)
                     }
                 ) {
-                    Text("No")
+                    Text(stringResource(R.string.no))
+                }
+            }
+        )
+    }
+
+    categoryDialogItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { categoryDialogItem = null },
+            title = { Text(stringResource(R.string.choose_expense_category)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.expense_category_required))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        viewModel.expenseTransactionCategories.forEach { option ->
+                            SelectionChip(
+                                label = context.transactionCategoryLabel(option),
+                                selected = selectedExpenseCategory == option,
+                                onClick = { selectedExpenseCategory = option }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.purchaseItem(
+                            itemId = item.id,
+                            createTransaction = true,
+                            transactionCategory = selectedExpenseCategory
+                        )
+                        categoryDialogItem = null
+                    }
+                ) {
+                    Text(stringResource(R.string.confirm_purchase))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { categoryDialogItem = null }
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    editingItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = {
+                editingItem = null
+                viewModel.resetForm()
+            },
+            title = { Text(stringResource(R.string.edit_wishlist_item)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    WishlistForm(viewModel = viewModel)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.updateItem(item.id) {
+                            editingItem = null
+                        }
+                    },
+                    enabled = !viewModel.isSubmitting.value
+                ) {
+                    Text(if (viewModel.isSubmitting.value) stringResource(R.string.saving) else stringResource(R.string.save))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        editingItem = null
+                        viewModel.resetForm()
+                    }
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    deletingItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { deletingItem = null },
+            title = { Text(stringResource(R.string.delete_wishlist_item)) },
+            text = { Text(stringResource(R.string.delete_wishlist_message, item.title)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteItem(item.id) {
+                            deletingItem = null
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingItem = null }) {
+                    Text(stringResource(R.string.cancel))
                 }
             }
         )
@@ -88,117 +214,63 @@ fun WishlistScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         SectionTitle(
-            title = "Wishlist",
-            subtitle = "Plan what you want next and turn purchases into finance records."
+            title = stringResource(R.string.wishlist_title),
+            subtitle = stringResource(R.string.wishlist_subtitle)
         )
 
         AppCard {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SectionTitle(title = "Add Wishlist Item")
-
-                OutlinedTextField(
-                    value = viewModel.title.value,
-                    onValueChange = viewModel::onTitleChange,
-                    label = { Text("Title") },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !viewModel.isSubmitting.value
-                )
-
-                OutlinedTextField(
-                    value = viewModel.price.value,
-                    onValueChange = viewModel::onPriceChange,
-                    label = { Text("Price (optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !viewModel.isSubmitting.value
-                )
-
-                OutlinedTextField(
-                    value = viewModel.url.value,
-                    onValueChange = viewModel::onUrlChange,
-                    label = { Text("Link (optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !viewModel.isSubmitting.value
-                )
-
-                Text(
-                    text = "Priority",
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-                listOf("HIGH", "MEDIUM", "LOW").forEach { option ->
-                    OutlinedButton(
-                        onClick = { viewModel.onPriorityChange(option) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            if (viewModel.priority.value == option) {
-                                "${option.lowercase().replaceFirstChar { it.uppercase() }} Selected"
-                            } else {
-                                option.lowercase().replaceFirstChar { it.uppercase() }
-                            }
-                        )
-                    }
-                }
-
-                Text(
-                    text = "Category",
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-                listOf("SELF", "PARTNER", "SHARED").forEach { option ->
-                    OutlinedButton(
-                        onClick = { viewModel.onCategoryChange(option) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            if (viewModel.category.value == option) {
-                                "${option.lowercase().replaceFirstChar { it.uppercase() }} Selected"
-                            } else {
-                                option.lowercase().replaceFirstChar { it.uppercase() }
-                            }
-                        )
-                    }
-                }
-
+                SectionTitle(title = stringResource(R.string.add_wishlist_item))
+                WishlistForm(viewModel = viewModel)
                 PrimaryActionButton(
-                    text = if (viewModel.isSubmitting.value) "Saving..." else "Add Item",
-                    onClick = viewModel::createItem,
+                    text = if (viewModel.isSubmitting.value) stringResource(R.string.saving) else stringResource(R.string.add_item),
+                    onClick = { viewModel.createItem() },
                     enabled = !viewModel.isSubmitting.value
                 )
             }
         }
 
-        viewModel.error.value?.let {
+        viewModel.error.value?.takeIf { it.isNotBlank() }?.let {
             Text(
                 text = it,
                 color = MaterialTheme.colorScheme.error
             )
         }
 
-        viewModel.successMessage.value?.let {
+        viewModel.successMessage.value?.takeIf { it.isNotBlank() }?.let {
             Text(
                 text = it,
                 color = MaterialTheme.colorScheme.primary
             )
         }
 
-        SectionTitle(title = "Planned Purchases")
+        SectionTitle(title = stringResource(R.string.planned_purchases))
 
         if (viewModel.isLoading.value && viewModel.items.value.isEmpty()) {
             EmptyState(
-                title = "Loading wishlist",
-                subtitle = "Pulling your planned purchases."
+                title = stringResource(R.string.loading_wishlist),
+                subtitle = stringResource(R.string.loading_wishlist_subtitle)
             )
         } else if (viewModel.items.value.isEmpty()) {
             EmptyState(
-                title = "Wishlist is empty",
-                subtitle = "Add something fun, useful, or shared for later."
+                title = stringResource(R.string.wishlist_empty),
+                subtitle = stringResource(R.string.wishlist_empty_subtitle)
             )
         } else {
             viewModel.items.value.forEach { item ->
                 WishlistItemCard(
                     item = item,
+                    currency = currency,
+                    canEdit = item.createdBy.id == viewModel.currentUserId.value,
                     isSubmitting = viewModel.isSubmitting.value,
+                    onOpenLinkClick = {
+                        val normalizedUrl = normalizeExternalUrl(item.url)
+                        if (normalizedUrl != null) {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse(normalizedUrl))
+                            )
+                        }
+                    },
                     onPurchaseClick = {
                         if (item.price != null) {
                             purchaseDialogItem = item
@@ -206,8 +278,12 @@ fun WishlistScreen(
                             viewModel.purchaseItem(item.id, createTransaction = false)
                         }
                     },
+                    onEditClick = {
+                        viewModel.populateEditor(item)
+                        editingItem = item
+                    },
                     onDeleteClick = {
-                        viewModel.deleteItem(item.id)
+                        deletingItem = item
                     }
                 )
             }
@@ -218,13 +294,85 @@ fun WishlistScreen(
 }
 
 @Composable
+private fun WishlistForm(viewModel: WishlistViewModel) {
+    OutlinedTextField(
+        value = viewModel.title.value,
+        onValueChange = viewModel::onTitleChange,
+        label = { Text(stringResource(R.string.title)) },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !viewModel.isSubmitting.value
+    )
+
+    OutlinedTextField(
+        value = viewModel.price.value,
+        onValueChange = viewModel::onPriceChange,
+        label = { Text(stringResource(R.string.price_optional)) },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !viewModel.isSubmitting.value
+    )
+
+    OutlinedTextField(
+        value = viewModel.url.value,
+        onValueChange = viewModel::onUrlChange,
+        label = { Text(stringResource(R.string.link_optional)) },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !viewModel.isSubmitting.value
+    )
+
+    Text(
+        text = stringResource(R.string.priority),
+        style = MaterialTheme.typography.titleMedium
+    )
+
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        listOf("HIGH", "MEDIUM", "LOW").forEach { option ->
+            SelectionChip(
+                label = LocalContext.current.priorityLabel(option),
+                selected = viewModel.priority.value == option,
+                onClick = { viewModel.onPriorityChange(option) },
+                enabled = !viewModel.isSubmitting.value
+            )
+        }
+    }
+
+    Text(
+        text = stringResource(R.string.category),
+        style = MaterialTheme.typography.titleMedium
+    )
+
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        listOf("SELF", "PARTNER", "SHARED").forEach { option ->
+            SelectionChip(
+                label = LocalContext.current.scopeLabel(option),
+                selected = viewModel.category.value == option,
+                onClick = { viewModel.onCategoryChange(option) },
+                enabled = !viewModel.isSubmitting.value
+            )
+        }
+    }
+}
+
+@Composable
 private fun WishlistItemCard(
     item: WishlistItemDto,
+    currency: AppCurrency,
+    canEdit: Boolean,
     isSubmitting: Boolean,
+    onOpenLinkClick: () -> Unit,
     onPurchaseClick: () -> Unit,
+    onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
     val priorityColor = priorityColor(item.priority)
+    val hasLink = !item.url.isNullOrBlank()
 
     AppCard {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -233,39 +381,62 @@ private fun WishlistItemCard(
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
-                text = "Priority: ${formatLabel(item.priority)}",
+                text = "${stringResource(R.string.priority)}: ${LocalContext.current.priorityLabel(item.priority)}",
                 color = priorityColor
             )
-            Text(text = "Category: ${formatLabel(item.category)}")
-            Text(text = "Created by: ${item.createdBy.email}")
+            Text(text = "${stringResource(R.string.category)}: ${LocalContext.current.scopeLabel(item.category)}")
+            Text(text = stringResource(R.string.created_by, item.createdBy.email))
 
             item.price?.let {
-                Text(text = "Price: ${formatAmount(it)}")
-            }
-
-            item.url?.takeIf { it.isNotBlank() }?.let {
-                Text(text = "Link: $it")
+                Text(text = stringResource(R.string.price_value, formatCurrency(it, currency)))
             }
 
             if (item.isPurchased) {
                 Text(
-                    text = "Purchased",
+                    text = stringResource(R.string.purchased),
                     color = MaterialTheme.colorScheme.primary
                 )
             } else {
                 PrimaryActionButton(
-                    text = "Mark as Purchased",
+                    text = stringResource(R.string.mark_as_purchased),
                     onClick = onPurchaseClick,
                     enabled = !isSubmitting
                 )
             }
 
-            OutlinedButton(
-                onClick = onDeleteClick,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !isSubmitting
-            ) {
-                Text("Delete")
+            if (hasLink || canEdit) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (hasLink) {
+                        OutlinedButton(
+                            onClick = onOpenLinkClick,
+                            enabled = !isSubmitting
+                        ) {
+                            Text(stringResource(R.string.open_link))
+                        }
+                    }
+
+                    if (canEdit && !item.isPurchased) {
+                        OutlinedButton(
+                            onClick = onEditClick,
+                            enabled = !isSubmitting
+                        ) {
+                            Text(stringResource(R.string.edit))
+                        }
+                    }
+
+                    if (canEdit) {
+                        OutlinedButton(
+                            onClick = onDeleteClick,
+                            enabled = !isSubmitting
+                        ) {
+                            Text(stringResource(R.string.delete))
+                        }
+                    }
+                }
             }
         }
     }
@@ -279,12 +450,15 @@ private fun priorityColor(priority: String): Color {
     }
 }
 
-private fun formatLabel(value: String): String {
-    return value.lowercase().replaceFirstChar { character ->
-        character.titlecase(Locale.getDefault())
+private fun normalizeExternalUrl(raw: String?): String? {
+    val value = raw?.trim().orEmpty()
+    if (value.isBlank()) {
+        return null
     }
-}
 
-private fun formatAmount(amount: Double): String {
-    return String.format(Locale.US, "%.2f", amount)
+    return if (value.startsWith("http://") || value.startsWith("https://")) {
+        value
+    } else {
+        "https://$value"
+    }
 }

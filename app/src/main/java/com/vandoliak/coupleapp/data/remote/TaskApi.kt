@@ -12,7 +12,9 @@ import retrofit2.http.Path
 data class TaskCreateRequest(
     val title: String,
     val points: Int,
-    val dueDate: String?
+    val dueDate: String?,
+    val recurrenceType: String,
+    val recurrenceInterval: Int?
 )
 
 data class TaskUpdateRequest(
@@ -34,12 +36,24 @@ data class TaskDto(
     val createdBy: TaskUserDto,
     val completionRequestedBy: TaskUserDto?,
     val dueDate: String?,
+    val recurrenceType: String,
+    val recurrenceInterval: Int?,
+    val recurrenceParentId: String?,
     val createdAt: String
+)
+
+data class TaskPartnerDto(
+    val id: String,
+    val email: String,
+    val nickname: String?,
+    val avatarKey: String?,
+    val points: Int
 )
 
 data class TaskListResponse(
     val currentUserId: String,
     val currentUserPoints: Int,
+    val partner: TaskPartnerDto?,
     val tasks: List<TaskDto>
 )
 

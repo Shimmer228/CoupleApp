@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { Response } from "express";
 import { prisma } from "../config/prisma";
 import { AuthenticatedRequest } from "../types/auth-request";
+import { deleteLocalAvatarFile, buildAvatarUrl } from "../utils/avatar-storage";
 import { getWeeklyWinnerId, normalizeOptionalNickname, parseAvatarKey } from "../utils/profile";
 
 const purchaseHistoryInclude = {
@@ -21,6 +22,7 @@ const myProfileSelect = {
   email: true,
   nickname: true,
   avatarKey: true,
+  avatarUrl: true,
   points: true,
   winStreak: true,
   pairId: true,
@@ -37,6 +39,7 @@ const partnerProfileSelect = {
   email: true,
   nickname: true,
   avatarKey: true,
+  avatarUrl: true,
   points: true,
   winStreak: true,
   pairId: true,
@@ -57,6 +60,19 @@ const getWinnerIdForPair = async (pairId: string | null) => {
   });
 
   return getWeeklyWinnerId(pairUsers);
+};
+
+const buildProfileResponse = async (user: {
+  id: string;
+  pairId: string | null;
+  [key: string]: unknown;
+}) => {
+  const winnerId = await getWinnerIdForPair(user.pairId);
+
+  return {
+    ...user,
+    isWeeklyWinner: winnerId === user.id,
+  };
 };
 
 const sendProfileError = (res: Response, error: unknown) => {
@@ -95,13 +111,8 @@ export const getMyProfile = async (req: AuthenticatedRequest, res: Response) => 
       return res.status(404).json({ message: "User not found" });
     }
 
-    const winnerId = await getWinnerIdForPair(user.pairId);
-
     return res.json({
-      profile: {
-        ...user,
-        isWeeklyWinner: winnerId === user.id,
-      },
+      profile: await buildProfileResponse(user),
     });
   } catch (error) {
     return sendProfileError(res, error);
@@ -134,13 +145,53 @@ export const updateMyProfile = async (req: AuthenticatedRequest, res: Response) 
       select: myProfileSelect,
     });
 
-    const winnerId = await getWinnerIdForPair(updatedUser.pairId);
+    return res.json({
+      profile: await buildProfileResponse(updatedUser),
+    });
+  } catch (error) {
+    return sendProfileError(res, error);
+  }
+};
+
+export const uploadMyAvatar = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "Avatar image is required" });
+    }
+
+    const currentUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        avatarUrl: true,
+      },
+    });
+
+    if (!currentUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const avatarUrl = buildAvatarUrl(req.file.filename);
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        avatarUrl,
+      },
+      select: myProfileSelect,
+    });
+
+    if (currentUser.avatarUrl && currentUser.avatarUrl !== avatarUrl) {
+      deleteLocalAvatarFile(currentUser.avatarUrl);
+    }
 
     return res.json({
-      profile: {
-        ...updatedUser,
-        isWeeklyWinner: winnerId === updatedUser.id,
-      },
+      profile: await buildProfileResponse(updatedUser),
     });
   } catch (error) {
     return sendProfileError(res, error);
@@ -184,13 +235,8 @@ export const getPartnerProfile = async (req: AuthenticatedRequest, res: Response
       throw new Error("PARTNER_NOT_FOUND");
     }
 
-    const winnerId = await getWinnerIdForPair(currentUser.pairId);
-
     return res.json({
-      profile: {
-        ...partner,
-        isWeeklyWinner: winnerId === partner.id,
-      },
+      profile: await buildProfileResponse(partner),
     });
   } catch (error) {
     return sendProfileError(res, error);
