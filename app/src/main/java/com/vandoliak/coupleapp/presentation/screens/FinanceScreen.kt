@@ -15,10 +15,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,6 +56,7 @@ import com.vandoliak.coupleapp.presentation.components.SelectionChip
 import com.vandoliak.coupleapp.presentation.util.formatCurrency
 import com.vandoliak.coupleapp.presentation.util.scopeLabel
 import com.vandoliak.coupleapp.presentation.util.transactionCategoryLabel
+import com.vandoliak.coupleapp.presentation.util.transactionStatusLabel
 import com.vandoliak.coupleapp.presentation.util.transactionTypeLabel
 import com.vandoliak.coupleapp.presentation.viewmodel.FinanceViewModel
 import java.time.Instant
@@ -70,6 +76,7 @@ fun FinanceScreen(
     )
     val settingsManager = remember(context) { AppSettingsManager(context.applicationContext) }
     val currency by settingsManager.currencyFlow.collectAsState(initial = AppCurrency.UAH)
+    var showCreateDialog by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<TransactionDto?>(null) }
     var deletingTransaction by remember { mutableStateOf<TransactionDto?>(null) }
 
@@ -117,93 +124,183 @@ fun FinanceScreen(
         )
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        SectionTitle(
-            title = stringResource(R.string.finance_title),
-            subtitle = stringResource(R.string.finance_subtitle)
-        )
-
-        BudgetOverviewCard(
-            totalBudget = viewModel.totalBudget.value,
-            balanceAmount = viewModel.balanceAmount.value,
-            balanceDirection = viewModel.balanceDirection.value,
-            currency = currency
-        )
-
-        CategorySummarySection(
-            title = stringResource(R.string.expense_categories_title),
-            subtitle = stringResource(R.string.expense_categories_subtitle),
-            summaries = viewModel.expenseByCategory.value,
-            currency = currency
-        )
-
-        if (viewModel.incomeByCategory.value.isNotEmpty()) {
-            CategorySummarySection(
-                title = stringResource(R.string.income_categories_title),
-                subtitle = stringResource(R.string.income_categories_subtitle),
-                summaries = viewModel.incomeByCategory.value,
-                currency = currency
-            )
-        }
-
-        AddTransactionCard(
-            viewModel = viewModel,
-            onSubmit = { viewModel.createTransaction() }
-        )
-
-        viewModel.error.value?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.error
-            )
-        }
-
-        viewModel.successMessage.value?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-
-        SectionTitle(
-            title = stringResource(R.string.recent_activity_title),
-            subtitle = stringResource(R.string.recent_activity_subtitle)
-        )
-
-        if (viewModel.isLoading.value && viewModel.transactions.value.isEmpty()) {
-            EmptyState(
-                title = stringResource(R.string.loading_finance_title),
-                subtitle = stringResource(R.string.loading_finance_subtitle)
-            )
-        } else if (viewModel.transactions.value.isEmpty()) {
-            EmptyState(
-                title = stringResource(R.string.no_transactions_title),
-                subtitle = stringResource(R.string.no_transactions_subtitle)
-            )
-        } else {
-            viewModel.transactions.value.forEach { transaction ->
-                FinanceItem(
-                    transaction = transaction,
-                    currency = currency,
-                    canEdit = transaction.createdBy.id == viewModel.currentUserId.value,
-                    onEditClick = {
-                        viewModel.populateEditor(transaction)
-                        editingTransaction = transaction
+    if (showCreateDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showCreateDialog = false
+                viewModel.resetForm()
+            },
+            title = { Text(stringResource(R.string.add_transaction_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = stringResource(R.string.add_transaction_subtitle),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    TransactionEditorForm(viewModel = viewModel)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.createTransaction {
+                            showCreateDialog = false
+                        }
                     },
-                    onDeleteClick = {
-                        deletingTransaction = transaction
+                    enabled = !viewModel.isSubmitting.value
+                ) {
+                    Text(
+                        if (viewModel.isSubmitting.value) {
+                            stringResource(R.string.saving)
+                        } else {
+                            stringResource(R.string.add_transaction_button)
+                        }
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showCreateDialog = false
+                        viewModel.resetForm()
                     }
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = {
+                    viewModel.resetForm()
+                    showCreateDialog = true
+                }
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Add,
+                    contentDescription = stringResource(R.string.add_transaction_button)
                 )
             }
         }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            SectionTitle(
+                title = stringResource(R.string.finance_title),
+                subtitle = stringResource(R.string.finance_subtitle)
+            )
 
-        Spacer(modifier = Modifier.height(8.dp))
+            BudgetOverviewCard(
+                totalBudget = viewModel.totalBudget.value,
+                balanceAmount = viewModel.balanceAmount.value,
+                balanceDirection = viewModel.balanceDirection.value,
+                currency = currency
+            )
+
+            CategorySummarySection(
+                title = stringResource(R.string.expense_categories_title),
+                subtitle = stringResource(R.string.expense_categories_subtitle),
+                summaries = viewModel.expenseByCategory.value,
+                currency = currency
+            )
+
+            if (viewModel.incomeByCategory.value.isNotEmpty()) {
+                CategorySummarySection(
+                    title = stringResource(R.string.income_categories_title),
+                    subtitle = stringResource(R.string.income_categories_subtitle),
+                    summaries = viewModel.incomeByCategory.value,
+                    currency = currency
+                )
+            }
+
+            SectionTitle(
+                title = stringResource(R.string.pending_confirmations_title),
+                subtitle = stringResource(R.string.pending_confirmations_subtitle)
+            )
+
+            if (viewModel.pendingConfirmations.value.isEmpty()) {
+                EmptyState(
+                    title = stringResource(R.string.no_pending_confirmations_title),
+                    subtitle = stringResource(R.string.no_pending_confirmations_subtitle)
+                )
+            } else {
+                viewModel.pendingConfirmations.value.forEach { transaction ->
+                    FinanceItem(
+                        transaction = transaction,
+                        currency = currency,
+                        canEdit = false,
+                        canRespond = true,
+                        onConfirmClick = { viewModel.confirmTransaction(transaction.id) },
+                        onRejectClick = { viewModel.rejectTransaction(transaction.id) },
+                        onEditClick = {},
+                        onDeleteClick = {}
+                    )
+                }
+            }
+
+            viewModel.error.value?.takeIf {
+                it.isNotBlank() && !showCreateDialog && editingTransaction == null && deletingTransaction == null
+            }?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            viewModel.successMessage.value?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            SectionTitle(
+                title = stringResource(R.string.recent_activity_title),
+                subtitle = stringResource(R.string.recent_activity_subtitle)
+            )
+
+            if (viewModel.isLoading.value && viewModel.transactions.value.isEmpty()) {
+                EmptyState(
+                    title = stringResource(R.string.loading_finance_title),
+                    subtitle = stringResource(R.string.loading_finance_subtitle)
+                )
+            } else if (viewModel.transactions.value.isEmpty()) {
+                EmptyState(
+                    title = stringResource(R.string.no_transactions_title),
+                    subtitle = stringResource(R.string.no_transactions_subtitle)
+                )
+            } else {
+                viewModel.transactions.value.forEach { transaction ->
+                    FinanceItem(
+                        transaction = transaction,
+                        currency = currency,
+                        canEdit = transaction.createdBy.id == viewModel.currentUserId.value,
+                        canRespond = false,
+                        onConfirmClick = {},
+                        onRejectClick = {},
+                        onEditClick = {
+                            viewModel.populateEditor(transaction)
+                            editingTransaction = transaction
+                        },
+                        onDeleteClick = {
+                            deletingTransaction = transaction
+                        }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(72.dp))
+        }
     }
 }
 
@@ -238,27 +335,6 @@ private fun BudgetOverviewCard(
                 } else {
                     MaterialTheme.colorScheme.onSurface
                 }
-            )
-        }
-    }
-}
-
-@Composable
-private fun AddTransactionCard(
-    viewModel: FinanceViewModel,
-    onSubmit: () -> Unit
-) {
-    AppCard {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SectionTitle(
-                title = stringResource(R.string.add_transaction_title),
-                subtitle = stringResource(R.string.add_transaction_subtitle)
-            )
-            TransactionEditorForm(viewModel = viewModel)
-            PrimaryActionButton(
-                text = if (viewModel.isSubmitting.value) stringResource(R.string.saving) else stringResource(R.string.add_transaction_button),
-                onClick = onSubmit,
-                enabled = !viewModel.isSubmitting.value
             )
         }
     }
@@ -302,6 +378,14 @@ private fun TransactionEditorDialog(
 @Composable
 private fun TransactionEditorForm(viewModel: FinanceViewModel) {
     val context = LocalContext.current
+
+    viewModel.error.value?.takeIf { it.isNotBlank() }?.let {
+        Text(
+            text = it,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
 
     OutlinedTextField(
         value = viewModel.title.value,
@@ -430,6 +514,9 @@ private fun FinanceItem(
     transaction: TransactionDto,
     currency: AppCurrency,
     canEdit: Boolean,
+    canRespond: Boolean,
+    onConfirmClick: () -> Unit,
+    onRejectClick: () -> Unit,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
@@ -463,6 +550,7 @@ private fun FinanceItem(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    TransactionStatusChip(status = transaction.status)
                 }
 
                 Text(
@@ -483,7 +571,23 @@ private fun FinanceItem(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            if (canEdit) {
+            if (canRespond) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    PrimaryActionButton(
+                        text = stringResource(R.string.confirm),
+                        onClick = onConfirmClick
+                    )
+                    OutlinedButton(
+                        onClick = onRejectClick,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.reject))
+                    }
+                }
+            } else if (canEdit) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -503,6 +607,33 @@ private fun FinanceItem(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TransactionStatusChip(status: String) {
+    val context = LocalContext.current
+    val backgroundColor = when (status.uppercase()) {
+        "PENDING_CONFIRMATION" -> MaterialTheme.colorScheme.secondaryContainer
+        "REJECTED" -> MaterialTheme.colorScheme.errorContainer
+        else -> MaterialTheme.colorScheme.primaryContainer
+    }
+    val textColor = when (status.uppercase()) {
+        "PENDING_CONFIRMATION" -> MaterialTheme.colorScheme.onSecondaryContainer
+        "REJECTED" -> MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.onPrimaryContainer
+    }
+
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = backgroundColor
+    ) {
+        Text(
+            text = context.transactionStatusLabel(status),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = textColor
+        )
     }
 }
 

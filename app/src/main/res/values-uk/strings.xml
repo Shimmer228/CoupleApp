@@ -1,4 +1,4 @@
-<resources>
+﻿<resources>
     <string name="app_name">CoupleApp</string>
     <string name="nav_calendar">Календар</string>
     <string name="nav_challenges">Челенджі</string>
@@ -33,6 +33,8 @@
     <string name="balance">Баланс</string>
     <string name="transactions">Транзакції</string>
     <string name="shop">Магазин</string>
+    <string name="notifications">Сповіщення</string>
+    <string name="back">Назад</string>
     <string name="profiles_title">Профілі</string>
     <string name="profiles_subtitle">Ваша ідентичність, серія, аватар і прогрес нагород в одному місці.</string>
     <string name="loading_profile">Завантаження профілю…</string>
@@ -53,6 +55,7 @@
     <string name="no_reward_purchases_yet">Покупок нагород ще немає.</string>
     <string name="cost_points">Вартість: %1$d балів</string>
     <string name="required_streak">Потрібна серія: %1$d</string>
+    <string name="current_streak">Поточна серія: %1$d</string>
     <string name="wishlist_title">Список бажань</string>
     <string name="wishlist_subtitle">Плануйте майбутні покупки й перетворюйте їх на фінансові записи.</string>
     <string name="add_wishlist_item">Додати бажання</string>
@@ -126,6 +129,10 @@
     <string name="expense_categories_subtitle">Куди зараз ідуть ваші гроші.</string>
     <string name="income_categories_title">Категорії доходів</string>
     <string name="income_categories_subtitle">Звідки надходять ваші гроші.</string>
+    <string name="pending_confirmations_title">Очікують підтвердження</string>
+    <string name="pending_confirmations_subtitle">Спільні витрати й витрати для партнера враховуються тільки після схвалення.</string>
+    <string name="no_pending_confirmations_title">Немає фінансових підтверджень</string>
+    <string name="no_pending_confirmations_subtitle">Зараз немає транзакцій, які потрібно підтвердити або відхилити.</string>
     <string name="add_transaction_title">Додати транзакцію</string>
     <string name="add_transaction_subtitle">Додайте новий дохід або витрату з коректною категорією.</string>
     <string name="add_transaction_button">Додати транзакцію</string>
@@ -133,12 +140,16 @@
     <string name="recent_activity_subtitle">Останні записи про доходи та витрати.</string>
     <string name="loading_finance_title">Завантаження фінансів</string>
     <string name="loading_finance_subtitle">Підтягуємо транзакції та аналітику.</string>
+    <string name="finance_action_failed">Не вдалося оновити статус транзакції</string>
     <string name="no_transactions_title">Транзакцій ще немає</string>
     <string name="no_transactions_subtitle">Додайте першу спільну витрату або дохід.</string>
     <string name="no_data_yet_title">Даних ще немає</string>
     <string name="no_data_yet_subtitle">Транзакції з цього розділу з’являться тут.</string>
     <string name="delete_transaction_title">Видалити транзакцію?</string>
     <string name="delete_transaction_message">Це видалить %1$s зі спільної фінансової історії.</string>
+    <string name="transaction_status_pending">Очікує</string>
+    <string name="transaction_status_confirmed">Підтверджено</string>
+    <string name="transaction_status_rejected">Відхилено</string>
     <string name="edit_transaction_title">Редагувати транзакцію</string>
     <string name="edit_transaction_message">Оновити %1$s</string>
     <string name="of_section">%1$s від розділу</string>
@@ -154,6 +165,11 @@
     <string name="create_challenge_title">Створити челендж</string>
     <string name="create_challenge_button">Створити челендж</string>
     <string name="creating">Створення…</string>
+    <string name="task_type_title">Тип завдання</string>
+    <string name="challenge_task_type">Челендж</string>
+    <string name="shared_task_type">Спільне</string>
+    <string name="challenge_task_explainer">Автор вкладає свої бали в банк і призначає челендж партнеру.</string>
+    <string name="shared_task_explainer">Спільне завдання фінансується системою. Нагорода ділиться після згоди обох партнерів.</string>
     <string name="due_date_label">Дата дедлайну (YYYY-MM-DD)</string>
     <string name="loading_challenges_title">Завантаження челенджів</string>
     <string name="loading_challenges_subtitle">Отримуємо актуальні челенджі вашої пари.</string>
@@ -165,6 +181,13 @@
     <string name="created_by_me_subtitle">Активні челенджі, які чекають на партнера.</string>
     <string name="created_by_me_empty_title">У вас немає активних челенджів</string>
     <string name="created_by_me_empty_subtitle">Створіть новий челендж вище, коли будете готові.</string>
+    <string name="shared_tasks_title">Спільні завдання</string>
+    <string name="shared_tasks_subtitle">Кооперативні завдання, де нагорода ділиться після узгодження.</string>
+    <string name="shared_tasks_empty_title">Спільних завдань ще немає</string>
+    <string name="shared_tasks_empty_subtitle">Створіть спільне завдання, щоб попрацювати над чимось разом.</string>
+    <string name="my_points_label">Мої бали</string>
+    <string name="partner_points_label">Бали партнера</string>
+    <string name="points_header_subtitle">Баланс балів</string>
     <string name="waiting_for_partner_title">Очікують підтвердження партнера</string>
     <string name="waiting_for_partner_subtitle">Я вже запросив підтвердження виконання.</string>
     <string name="waiting_for_partner_empty_title">Ваших очікувань поки немає</string>
@@ -184,11 +207,23 @@
     <string name="due_date_format">Дата дедлайну: %1$s</string>
     <string name="recurrence_format">Повторення: %1$s</string>
     <string name="request_complete">Запросити завершення</string>
+    <string name="propose_completion_split">Запропонувати розподіл нагороди</string>
     <string name="return_task">Повернути</string>
     <string name="fail_task">Провалити</string>
     <string name="confirm">Підтвердити</string>
     <string name="reject">Відхилити</string>
+    <string name="accept_split">Прийняти розподіл</string>
+    <string name="counter_split">Запропонувати свій</string>
     <string name="challenge_active_waiting_partner">Челендж активний і чекає на вашого партнера.</string>
+    <string name="shared_split_waiting_partner">Очікує, поки партнер схвалить ваш розподіл</string>
+    <string name="shared_split_partner_proposed">Партнер запропонував розподіл нагороди</string>
+    <string name="shared_split_partner_breakdown">Партнер запропонував: Вам %1$d / Партнеру %2$d</string>
+    <string name="shared_split_waiting_breakdown">Очікує на партнера: Вам %1$d / Партнеру %2$d</string>
+    <string name="shared_split_title">Розподілити спільну нагороду</string>
+    <string name="shared_split_subtitle">Банк нагороди: %1$d</string>
+    <string name="my_reward_points">Моя нагорода</string>
+    <string name="partner_reward_points">Нагорода партнера</string>
+    <string name="shared_split_sum_mismatch">Сума розподілу має дорівнювати всьому банку</string>
     <string name="recurrence_title">Повторення</string>
     <string name="recurrence_subtitle">Для повторюваних челенджів ми наперед генеруємо лише до наступного місяця.</string>
     <string name="recurrence_none">Немає</string>
@@ -218,6 +253,8 @@
     <string name="create_task_title">Створити завдання</string>
     <string name="create_task_subtitle">Киньте виклик партнеру в цей день</string>
     <string name="create_task_button">Створити завдання</string>
+    <string name="create_for_day_title">Швидкі дії</string>
+    <string name="create_for_day_subtitle">Відкрийте форму для цієї дати, не перевантажуючи вигляд календаря.</string>
     <string name="blueprints_title">Blueprints</string>
     <string name="blueprints_use_subtitle">Натисніть, щоб використати на цю дату</string>
     <string name="blueprints_library_subtitle">Бібліотека шаблонів завдань і подій</string>
@@ -289,6 +326,8 @@
     <string name="failed_to_load_reward_shop">Не вдалося завантажити магазин нагород</string>
     <string name="failed_to_buy_reward">Не вдалося купити нагороду</string>
     <string name="reward_purchased">Нагороду придбано</string>
+    <string name="transaction_confirmed">Транзакцію підтверджено</string>
+    <string name="transaction_rejected">Транзакцію відхилено</string>
     <string name="failed_to_load_blueprints">Не вдалося завантажити blueprint’и</string>
     <string name="failed_to_create_blueprint">Не вдалося створити blueprint</string>
     <string name="failed_to_delete_blueprint">Не вдалося видалити blueprint</string>
@@ -307,8 +346,10 @@
     <string name="due_date_format_required">Дата дедлайну має бути у форматі YYYY-MM-DD</string>
     <string name="recurring_interval_positive">Інтервал повторення має бути додатним числом</string>
     <string name="recurring_challenges_require_due_date">Для повторюваних челенджів потрібна дата дедлайну</string>
+    <string name="recurring_tasks_require_due_date">Для повторюваних завдань потрібна дата дедлайну</string>
     <string name="event_added_to_date">Подію додано на %1$s</string>
     <string name="task_scheduled_for_date">Завдання заплановано на %1$s</string>
+    <string name="shared_task_scheduled_for_date">Спільне завдання заплановано на %1$s</string>
     <string name="event_updated">Подію оновлено</string>
     <string name="event_deleted">Подію видалено</string>
     <string name="failed_to_delete_task">Не вдалося видалити завдання</string>
@@ -321,8 +362,14 @@
     <string name="task_returned_successfully">Завдання успішно повернуто</string>
     <string name="task_failed_success">Завдання провалено</string>
     <string name="challenge_created_successfully">Челендж успішно створено</string>
+    <string name="shared_task_created_successfully">Спільне завдання успішно створено</string>
+    <string name="shared_split_proposed">Розподіл нагороди запропоновано</string>
+    <string name="shared_split_accepted">Розподіл нагороди прийнято</string>
+    <string name="shared_split_countered">Розподіл нагороди оновлено</string>
     <string name="failed_to_load_transactions">Не вдалося завантажити транзакції</string>
     <string name="failed_to_load_finance_summary">Не вдалося завантажити фінансову аналітику</string>
+    <string name="failed_to_load_notifications">Не вдалося завантажити сповіщення</string>
+    <string name="failed_to_mark_notification_read">Не вдалося позначити сповіщення як прочитане</string>
     <string name="transaction_title_required">Потрібно ввести назву транзакції</string>
     <string name="amount_greater_than_zero">Сума має бути більшою за 0</string>
     <string name="valid_category_required">Оберіть коректну категорію для вибраного типу транзакції</string>
@@ -344,6 +391,10 @@
     <string name="wishlist_item_purchased_finance">Елемент позначено як придбаний і додано у фінанси</string>
     <string name="failed_to_delete_wishlist_item">Не вдалося видалити елемент списку бажань</string>
     <string name="wishlist_item_deleted">Елемент списку бажань видалено</string>
+    <string name="loading_notifications_title">Завантаження сповіщень</string>
+    <string name="loading_notifications_subtitle">Дивимося, що нового з’явилося у вашій парі.</string>
+    <string name="no_notifications_title">Сповіщень поки немає</string>
+    <string name="no_notifications_subtitle">Тут з’являтимуться покупки нагород та інші внутрішні події.</string>
     <string name="task_status_active">Активне</string>
     <string name="task_status_completed">Завершене</string>
     <string name="task_status_failed">Провалене</string>

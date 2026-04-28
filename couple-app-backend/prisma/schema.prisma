@@ -14,6 +14,17 @@ enum TaskStatus {
   FAILED
 }
 
+enum TaskType {
+  CHALLENGE
+  SHARED
+}
+
+enum SharedSplitStatus {
+  NONE
+  PROPOSED
+  AGREED
+}
+
 enum TaskRecurrenceType {
   NONE
   EVERY_X_DAYS
@@ -49,6 +60,16 @@ enum TransactionCategory {
   OTHER
 }
 
+enum TransactionStatus {
+  PENDING_CONFIRMATION
+  CONFIRMED
+  REJECTED
+}
+
+enum NotificationType {
+  REWARD_PURCHASE
+}
+
 enum WishlistPriority {
   LOW
   MEDIUM
@@ -69,6 +90,7 @@ model User {
   avatarKey String?
   avatarUrl String?
   winStreak Int      @default(0)
+  lastWeeklyPointsAt DateTime?
   createdAt DateTime @default(now())
 
   pairId String?
@@ -77,11 +99,15 @@ model User {
   createdTasks  Task[] @relation("CreatedTasks")
   assignedTasks Task[] @relation("AssignedTasks")
   completionRequestedTasks Task[] @relation("CompletionRequestedTasks")
+  proposedSharedTasks Task[] @relation("ProposedSplitTasks")
   createdEvents Event[] @relation("CreatedEvents")
   createdTransactions Transaction[] @relation("CreatedTransactions")
+  confirmedTransactions Transaction[] @relation("ConfirmedTransactions")
+  rejectedTransactions Transaction[] @relation("RejectedTransactions")
   createdWishlistItems WishlistItem[] @relation("CreatedWishlistItems")
   rewardPurchases RewardPurchase[]
   createdBlueprints Blueprint[] @relation("CreatedBlueprints")
+  notifications Notification[]
 }
 
 model Pair {
@@ -96,16 +122,22 @@ model Pair {
   wishlistItems WishlistItem[]
   rewardPurchases RewardPurchase[]
   blueprints Blueprint[]
+  notifications Notification[]
 }
 
 model Task {
   id           String     @id @default(uuid())
   title        String
   bank         Int
+  type         TaskType   @default(CHALLENGE)
   status       TaskStatus @default(ACTIVE)
-  assignedToId String
+  sharedSplitStatus SharedSplitStatus @default(NONE)
+  assignedToId String?
   createdById  String
   completionRequestedById String?
+  proposedById String?
+  proposedUser1Points Int?
+  proposedUser2Points Int?
   pairId       String
   dueDate      DateTime?
   recurrenceType TaskRecurrenceType @default(NONE)
@@ -113,13 +145,15 @@ model Task {
   recurrenceParentId String?
   createdAt    DateTime   @default(now())
 
-  assignedTo User @relation("AssignedTasks", fields: [assignedToId], references: [id], onDelete: Restrict)
+  assignedTo User? @relation("AssignedTasks", fields: [assignedToId], references: [id], onDelete: Restrict)
   createdBy  User @relation("CreatedTasks", fields: [createdById], references: [id], onDelete: Restrict)
   completionRequestedBy User? @relation("CompletionRequestedTasks", fields: [completionRequestedById], references: [id], onDelete: SetNull)
+  proposedBy User? @relation("ProposedSplitTasks", fields: [proposedById], references: [id], onDelete: SetNull)
   pair       Pair @relation(fields: [pairId], references: [id], onDelete: Cascade)
 
   @@index([pairId, createdAt])
   @@index([completionRequestedById])
+  @@index([proposedById])
 }
 
 model Event {
@@ -127,6 +161,9 @@ model Event {
   title       String
   description String?
   date        DateTime
+  recurrenceType TaskRecurrenceType @default(NONE)
+  recurrenceInterval Int?
+  recurrenceParentId String?
   pairId      String
   createdById String
   createdAt   DateTime @default(now())
@@ -144,14 +181,20 @@ model Transaction {
   type        TransactionType
   category    TransactionScope
   transactionCategory TransactionCategory @default(OTHER)
+  status      TransactionStatus @default(CONFIRMED)
   createdById String
+  confirmedById String?
+  rejectedById String?
   pairId      String
   createdAt   DateTime            @default(now())
 
   createdBy User @relation("CreatedTransactions", fields: [createdById], references: [id], onDelete: Restrict)
+  confirmedBy User? @relation("ConfirmedTransactions", fields: [confirmedById], references: [id], onDelete: SetNull)
+  rejectedBy User? @relation("RejectedTransactions", fields: [rejectedById], references: [id], onDelete: SetNull)
   pair      Pair @relation(fields: [pairId], references: [id], onDelete: Cascade)
 
   @@index([pairId, createdAt])
+  @@index([status])
 }
 
 model WishlistItem {
@@ -214,5 +257,22 @@ model Blueprint {
   createdBy User @relation("CreatedBlueprints", fields: [createdById], references: [id], onDelete: Restrict)
   pair      Pair @relation(fields: [pairId], references: [id], onDelete: Cascade)
 
+  @@index([pairId, createdAt])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  title     String
+  message   String
+  type      NotificationType
+  userId    String
+  pairId    String
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pair Pair @relation(fields: [pairId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
   @@index([pairId, createdAt])
 }

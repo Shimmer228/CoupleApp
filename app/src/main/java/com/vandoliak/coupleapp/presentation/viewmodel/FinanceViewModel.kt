@@ -63,6 +63,9 @@ class FinanceViewModel(app: Application) : AndroidViewModel(app) {
     var transactions = mutableStateOf<List<TransactionDto>>(emptyList())
         private set
 
+    var pendingConfirmations = mutableStateOf<List<TransactionDto>>(emptyList())
+        private set
+
     var totalBudget = mutableStateOf(0.0)
         private set
 
@@ -133,6 +136,7 @@ class FinanceViewModel(app: Application) : AndroidViewModel(app) {
         type.value = "EXPENSE"
         scope.value = "SELF"
         transactionCategory.value = "OTHER"
+        error.value = null
     }
 
     fun loadFinance() {
@@ -321,6 +325,9 @@ class FinanceViewModel(app: Application) : AndroidViewModel(app) {
 
             currentUserId.value = transactionsResponse.body()?.currentUserId.orEmpty()
             transactions.value = transactionsResponse.body()?.transactions.orEmpty()
+            pendingConfirmations.value = transactions.value.filter { transaction ->
+                transaction.status == "PENDING_CONFIRMATION" && transaction.createdBy.id != currentUserId.value
+            }
             val summary = summaryResponse.body()
             totalBudget.value = summary?.totalBudget ?: 0.0
             balanceAmount.value = summary?.balance?.amount ?: 0.0
@@ -351,5 +358,57 @@ class FinanceViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         return builder.toString()
+    }
+
+    fun confirmTransaction(transactionId: String, onSuccess: (() -> Unit)? = null) {
+        runTransactionAction(
+            successText = appString(R.string.transaction_confirmed),
+            onSuccess = onSuccess
+        ) { authorization ->
+            RetrofitInstance.financeApi.confirmTransaction(authorization, transactionId)
+        }
+    }
+
+    fun rejectTransaction(transactionId: String, onSuccess: (() -> Unit)? = null) {
+        runTransactionAction(
+            successText = appString(R.string.transaction_rejected),
+            onSuccess = onSuccess
+        ) { authorization ->
+            RetrofitInstance.financeApi.rejectTransaction(authorization, transactionId)
+        }
+    }
+
+    private fun runTransactionAction(
+        successText: String,
+        onSuccess: (() -> Unit)? = null,
+        request: suspend (String) -> retrofit2.Response<*>
+    ) {
+        viewModelScope.launch {
+            val token = tokenManager.tokenFlow.first()
+            if (token.isNullOrBlank()) {
+                error.value = appString(R.string.session_expired_login)
+                return@launch
+            }
+
+            try {
+                isSubmitting.value = true
+                error.value = null
+                successMessage.value = null
+
+                val response = request("Bearer $token")
+                if (!response.isSuccessful) {
+                    error.value = response.extractErrorMessage(appString(R.string.finance_action_failed))
+                    return@launch
+                }
+
+                successMessage.value = successText
+                loadData(showLoader = false)
+                onSuccess?.invoke()
+            } catch (e: Exception) {
+                error.value = e.message ?: appString(R.string.unknown_error)
+            } finally {
+                isSubmitting.value = false
+            }
+        }
     }
 }

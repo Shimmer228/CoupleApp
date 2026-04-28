@@ -24,7 +24,9 @@ import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.data.remote.RewardDto
 import com.vandoliak.coupleapp.presentation.components.AppCard
 import com.vandoliak.coupleapp.presentation.components.AppTopBar
+import com.vandoliak.coupleapp.presentation.components.CouplePointsHeader
 import com.vandoliak.coupleapp.presentation.components.EmptyState
+import com.vandoliak.coupleapp.presentation.components.PointBadge
 import com.vandoliak.coupleapp.presentation.components.PrimaryActionButton
 import com.vandoliak.coupleapp.presentation.components.SectionTitle
 import com.vandoliak.coupleapp.presentation.viewmodel.ShopViewModel
@@ -66,15 +68,11 @@ fun ShopScreen(
                 subtitle = stringResource(R.string.reward_catalog_subtitle)
             )
 
-            AppCard {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "${stringResource(R.string.points)}: ${viewModel.currentUserPoints.value}",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Text(text = "${stringResource(R.string.streak)}: ${viewModel.currentUserWinStreak.value}")
-                }
-            }
+            CouplePointsHeader(
+                myLabel = stringResource(R.string.my_points_label),
+                myPoints = viewModel.currentUserPoints.value,
+                subtitle = stringResource(R.string.required_streak_value, viewModel.currentUserWinStreak.value)
+            )
 
             viewModel.error.value?.takeIf { it.isNotBlank() }?.let {
                 Text(
@@ -140,7 +138,7 @@ private fun RewardCard(
                 )
             }
 
-            Text(text = stringResource(R.string.cost_points_value, reward.cost))
+            PointBadge(points = reward.cost)
             Text(text = stringResource(R.string.required_streak_value, reward.minStreak))
             Text(text = if (reward.isUnlocked) stringResource(R.string.unlocked) else stringResource(R.string.locked))
 

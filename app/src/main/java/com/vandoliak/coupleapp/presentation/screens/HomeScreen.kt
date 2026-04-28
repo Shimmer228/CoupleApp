@@ -43,7 +43,8 @@ private enum class MainTab {
 @Composable
 fun HomeScreen(
     onNavigateToShop: () -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    onNavigateToNotifications: () -> Unit
 ) {
     val context = LocalContext.current
     val profileViewModel: ProfileViewModel = viewModel(
@@ -104,7 +105,8 @@ fun HomeScreen(
             MainTab.PROFILE -> ProfileScreen(
                 modifier = contentModifier,
                 onNavigateToShop = onNavigateToShop,
-                onNavigateToSettings = onNavigateToSettings
+                onNavigateToSettings = onNavigateToSettings,
+                onNavigateToNotifications = onNavigateToNotifications
             )
         }
     }

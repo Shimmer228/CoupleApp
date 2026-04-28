@@ -66,6 +66,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun setLanguage(value: AppLanguage) {
         viewModelScope.launch {
             settingsManager.setLanguage(value)
+            settingsManager.applyLanguage(value)
             notice.value = SettingsNotice.RESTART_LANGUAGE
         }
     }

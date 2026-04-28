@@ -60,6 +60,16 @@ fun Context.transactionCategoryLabel(category: String): String {
     )
 }
 
+fun Context.transactionStatusLabel(status: String): String {
+    return getString(
+        when (status.uppercase()) {
+            "PENDING_CONFIRMATION" -> R.string.transaction_status_pending
+            "REJECTED" -> R.string.transaction_status_rejected
+            else -> R.string.transaction_status_confirmed
+        }
+    )
+}
+
 fun Context.recurrenceLabel(type: String, interval: Int? = null): String {
     return when (type.uppercase()) {
         "EVERY_X_DAYS" -> getString(R.string.recurrence_every_n_days, interval ?: 1)
@@ -69,8 +79,16 @@ fun Context.recurrenceLabel(type: String, interval: Int? = null): String {
     }
 }
 
-fun Context.taskStatusLabel(status: String, requestedByCurrentUser: Boolean): String {
+fun Context.taskStatusLabel(status: String, requestedByCurrentUser: Boolean, taskType: String = "CHALLENGE"): String {
     return when {
+        taskType.uppercase() == "SHARED" && status == "WAITING_CONFIRMATION" && requestedByCurrentUser -> {
+            getString(R.string.shared_split_waiting_partner)
+        }
+
+        taskType.uppercase() == "SHARED" && status == "WAITING_CONFIRMATION" -> {
+            getString(R.string.shared_split_partner_proposed)
+        }
+
         status == "WAITING_CONFIRMATION" && requestedByCurrentUser -> {
             getString(R.string.waiting_for_partner_confirmation)
         }
@@ -98,6 +116,15 @@ fun Context.blueprintTypeLabel(type: String): String {
         when (type.uppercase()) {
             "EVENT" -> R.string.event_label
             else -> R.string.task_label
+        }
+    )
+}
+
+fun Context.taskTypeLabel(type: String): String {
+    return getString(
+        when (type.uppercase()) {
+            "SHARED" -> R.string.shared_task_type
+            else -> R.string.challenge_task_type
         }
     )
 }

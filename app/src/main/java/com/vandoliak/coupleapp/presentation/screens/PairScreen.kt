@@ -12,6 +12,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -35,111 +36,116 @@ fun PairScreen(
         )
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
     ) {
-        Text(
-            text = stringResource(R.string.pair_setup),
-            style = MaterialTheme.typography.headlineMedium
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = stringResource(R.string.pair_setup),
+                style = MaterialTheme.typography.headlineMedium
+            )
 
-        Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-        Text(
-            text = stringResource(R.string.pair_setup_subtitle),
-            style = MaterialTheme.typography.bodyLarge
-        )
+            Text(
+                text = stringResource(R.string.pair_setup_subtitle),
+                style = MaterialTheme.typography.bodyLarge
+            )
 
-        viewModel.createdJoinCode.value?.let { joinCode ->
-            Spacer(modifier = Modifier.height(24.dp))
+            viewModel.createdJoinCode.value?.let { joinCode ->
+                Spacer(modifier = Modifier.height(24.dp))
 
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
+                Card(
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = stringResource(R.string.your_pair_code),
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.your_pair_code),
+                            style = MaterialTheme.typography.titleMedium
+                        )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    Text(
-                        text = joinCode,
-                        style = MaterialTheme.typography.headlineSmall
-                    )
+                        Text(
+                            text = joinCode,
+                            style = MaterialTheme.typography.headlineSmall
+                        )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    Text(
-                        text = stringResource(R.string.pair_code_share_hint),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                        Text(
+                            text = stringResource(R.string.pair_code_share_hint),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(24.dp))
+            viewModel.error.value?.takeIf { it.isNotBlank() }?.let {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
 
-        Button(
-            onClick = viewModel::createPair,
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !viewModel.isLoading.value && viewModel.currentPairId.value == null
-        ) {
-            Text(if (viewModel.isLoading.value) stringResource(R.string.loading) else stringResource(R.string.create_pair))
-        }
+            viewModel.successMessage.value?.takeIf { it.isNotBlank() }?.let {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
 
-        Spacer(modifier = Modifier.height(24.dp))
+            if (viewModel.currentPairId.value == null) {
+                Spacer(modifier = Modifier.height(24.dp))
 
-        OutlinedTextField(
-            value = viewModel.joinCode.value,
-            onValueChange = viewModel::onJoinCodeChange,
-            label = { Text(stringResource(R.string.join_code)) },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !viewModel.isLoading.value && viewModel.currentPairId.value == null
-        )
+                Button(
+                    onClick = viewModel::createPair,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !viewModel.isLoading.value
+                ) {
+                    Text(if (viewModel.isLoading.value) stringResource(R.string.loading) else stringResource(R.string.create_pair))
+                }
 
-        Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-        Button(
-            onClick = { viewModel.joinPair(onPairComplete) },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !viewModel.isLoading.value && viewModel.currentPairId.value == null
-        ) {
-            Text(if (viewModel.isLoading.value) stringResource(R.string.loading) else stringResource(R.string.join_pair))
-        }
+                OutlinedTextField(
+                    value = viewModel.joinCode.value,
+                    onValueChange = viewModel::onJoinCodeChange,
+                    label = { Text(stringResource(R.string.join_code)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !viewModel.isLoading.value
+                )
 
-        viewModel.error.value?.takeIf { it.isNotBlank() }?.let {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.error
-            )
-        }
+                Spacer(modifier = Modifier.height(12.dp))
 
-        viewModel.successMessage.value?.takeIf { it.isNotBlank() }?.let {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-
-        if (viewModel.currentPairId.value != null) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = {
-                    viewModel.clearMessage()
-                    onPairComplete()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.continue_to_home))
+                Button(
+                    onClick = { viewModel.joinPair(onPairComplete) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !viewModel.isLoading.value
+                ) {
+                    Text(if (viewModel.isLoading.value) stringResource(R.string.loading) else stringResource(R.string.join_pair))
+                }
+            } else {
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        viewModel.clearMessage()
+                        onPairComplete()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.continue_to_home))
+                }
             }
         }
     }

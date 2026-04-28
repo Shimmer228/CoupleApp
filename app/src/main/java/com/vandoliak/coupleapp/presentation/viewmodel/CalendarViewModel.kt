@@ -10,6 +10,7 @@ import com.vandoliak.coupleapp.data.remote.EventCreateRequest
 import com.vandoliak.coupleapp.data.remote.EventDto
 import com.vandoliak.coupleapp.data.remote.EventUpdateRequest
 import com.vandoliak.coupleapp.data.remote.RetrofitInstance
+import com.vandoliak.coupleapp.data.remote.SharedSplitRequest
 import com.vandoliak.coupleapp.data.remote.TaskCreateRequest
 import com.vandoliak.coupleapp.data.remote.TaskDeleteResponse
 import com.vandoliak.coupleapp.data.remote.TaskDto
@@ -43,11 +44,17 @@ data class CalendarItemUi(
     val defaultPoints: Int?,
     val createdById: String,
     val createdByLabel: String,
+    val taskType: String? = null,
     val assignedToId: String? = null,
     val assignedToLabel: String? = null,
     val status: String? = null,
+    val sharedSplitStatus: String? = null,
     val completionRequestedById: String? = null,
     val completionRequestedByLabel: String? = null,
+    val proposedById: String? = null,
+    val proposedByLabel: String? = null,
+    val proposedUser1Points: Int? = null,
+    val proposedUser2Points: Int? = null,
     val recurrenceType: String? = null,
     val recurrenceInterval: Int? = null
 )
@@ -83,6 +90,9 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     var currentUserId = mutableStateOf<String?>(null)
         private set
 
+    var partnerId = mutableStateOf<String?>(null)
+        private set
+
     var isDaySheetVisible = mutableStateOf(false)
         private set
 
@@ -92,10 +102,19 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     var eventDescription = mutableStateOf("")
         private set
 
+    var eventRecurrenceType = mutableStateOf("NONE")
+        private set
+
+    var eventRecurrenceInterval = mutableStateOf("")
+        private set
+
     var taskTitle = mutableStateOf("")
         private set
 
     var taskPoints = mutableStateOf("")
+        private set
+
+    var taskType = mutableStateOf("CHALLENGE")
         private set
 
     var recurrenceType = mutableStateOf("NONE")
@@ -162,6 +181,21 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
         taskPoints.value = value.filter { it.isDigit() }
     }
 
+    fun onTaskTypeChange(value: String) {
+        taskType.value = value
+    }
+
+    fun onEventRecurrenceTypeChange(value: String) {
+        eventRecurrenceType.value = value
+        if (value != "EVERY_X_DAYS") {
+            eventRecurrenceInterval.value = ""
+        }
+    }
+
+    fun onEventRecurrenceIntervalChange(value: String) {
+        eventRecurrenceInterval.value = value.filter { it.isDigit() }
+    }
+
     fun onRecurrenceTypeChange(value: String) {
         recurrenceType.value = value
         if (value != "EVERY_X_DAYS") {
@@ -173,9 +207,16 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
         recurrenceInterval.value = value.filter { it.isDigit() }
     }
 
-    fun createEventForSelectedDay() {
+    fun createEventForSelectedDay(onSuccess: (() -> Unit)? = null) {
+        val recurrenceIntervalValue = eventRecurrenceInterval.value.toIntOrNull()
+
         if (eventTitle.value.isBlank()) {
             error.value = appString(R.string.event_title_required)
+            return
+        }
+
+        if (eventRecurrenceType.value == "EVERY_X_DAYS" && (recurrenceIntervalValue == null || recurrenceIntervalValue <= 0)) {
+            error.value = appString(R.string.recurring_interval_positive)
             return
         }
 
@@ -188,7 +229,9 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
                         request = EventCreateRequest(
                             title = eventTitle.value.trim(),
                             description = eventDescription.value.trim().ifBlank { null },
-                            date = localDateToApiDate(selectedDate.value)
+                            date = localDateToApiDate(selectedDate.value),
+                            recurrenceType = eventRecurrenceType.value,
+                            recurrenceInterval = recurrenceIntervalValue
                         )
                     )
                 }
@@ -197,11 +240,14 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
             if (error.value == null) {
                 eventTitle.value = ""
                 eventDescription.value = ""
+                eventRecurrenceType.value = "NONE"
+                eventRecurrenceInterval.value = ""
+                onSuccess?.invoke()
             }
         }
     }
 
-    fun createTaskForSelectedDay() {
+    fun createTaskForSelectedDay(onSuccess: (() -> Unit)? = null) {
         val points = taskPoints.value.toIntOrNull()
         val recurrenceIntervalValue = recurrenceInterval.value.toIntOrNull()
 
@@ -222,12 +268,17 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch {
             mutateTaskAction(
-                successText = appString(R.string.task_scheduled_for_date, selectedDate.value.toString()),
+                successText = if (taskType.value == "SHARED") {
+                    appString(R.string.shared_task_scheduled_for_date, selectedDate.value.toString())
+                } else {
+                    appString(R.string.task_scheduled_for_date, selectedDate.value.toString())
+                },
                 request = { authorization ->
                     RetrofitInstance.taskApi.createTask(
                         authorization = authorization,
                         request = TaskCreateRequest(
                             title = taskTitle.value.trim(),
+                            type = taskType.value,
                             points = points,
                             dueDate = localDateToApiDate(selectedDate.value),
                             recurrenceType = recurrenceType.value,
@@ -240,8 +291,10 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
             if (error.value == null) {
                 taskTitle.value = ""
                 taskPoints.value = ""
+                taskType.value = "CHALLENGE"
                 recurrenceType.value = "NONE"
                 recurrenceInterval.value = ""
+                onSuccess?.invoke()
             }
         }
     }
@@ -394,14 +447,61 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun proposeSharedSplit(taskId: String, myPoints: Int, partnerPoints: Int, onSuccess: (() -> Unit)? = null) {
+        runTaskAction(taskId, appString(R.string.shared_split_proposed), onSuccess) { authorization, id ->
+            RetrofitInstance.taskApi.proposeSharedSplit(
+                authorization = authorization,
+                taskId = id,
+                request = SharedSplitRequest(myPoints = myPoints, partnerPoints = partnerPoints)
+            )
+        }
+    }
+
+    fun acceptSharedSplit(taskId: String, onSuccess: (() -> Unit)? = null) {
+        runTaskAction(taskId, appString(R.string.shared_split_accepted), onSuccess) { authorization, id ->
+            RetrofitInstance.taskApi.acceptSharedSplit(authorization, id)
+        }
+    }
+
+    fun counterSharedSplit(taskId: String, myPoints: Int, partnerPoints: Int, onSuccess: (() -> Unit)? = null) {
+        runTaskAction(taskId, appString(R.string.shared_split_countered), onSuccess) { authorization, id ->
+            RetrofitInstance.taskApi.counterSharedSplit(
+                authorization = authorization,
+                taskId = id,
+                request = SharedSplitRequest(myPoints = myPoints, partnerPoints = partnerPoints)
+            )
+        }
+    }
+
+    fun resetEventForm() {
+        eventTitle.value = ""
+        eventDescription.value = ""
+        eventRecurrenceType.value = "NONE"
+        eventRecurrenceInterval.value = ""
+        error.value = null
+    }
+
+    fun resetTaskForm() {
+        taskTitle.value = ""
+        taskPoints.value = ""
+        taskType.value = "CHALLENGE"
+        recurrenceType.value = "NONE"
+        recurrenceInterval.value = ""
+        error.value = null
+    }
+
     private fun runTaskAction(
         taskId: String,
         successText: String,
+        onSuccess: (() -> Unit)? = null,
         action: suspend (String, String) -> Response<com.vandoliak.coupleapp.data.remote.TaskActionResponse>
     ) {
         viewModelScope.launch {
             mutateTaskAction(successText) { authorization ->
                 action(authorization, taskId)
+            }
+            if (error.value == null) {
+                onSuccess?.invoke()
             }
         }
     }
@@ -439,6 +539,7 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             currentUserId.value = taskBody.currentUserId
+            partnerId.value = taskBody.partner?.id
             allTasks = taskBody.tasks
             allEvents = eventsResponse.body()?.events.orEmpty()
             rebuildCalendarState()
@@ -555,11 +656,17 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
                 defaultPoints = task.bank,
                 createdById = task.createdBy.id,
                 createdByLabel = task.createdBy.email,
-                assignedToId = task.assignedTo.id,
-                assignedToLabel = task.assignedTo.email,
+                taskType = task.type,
+                assignedToId = task.assignedTo?.id,
+                assignedToLabel = task.assignedTo?.email,
                 status = task.status,
+                sharedSplitStatus = task.sharedSplitStatus,
                 completionRequestedById = task.completionRequestedBy?.id,
                 completionRequestedByLabel = task.completionRequestedBy?.email,
+                proposedById = task.proposedBy?.id,
+                proposedByLabel = task.proposedBy?.email,
+                proposedUser1Points = task.proposedUser1Points,
+                proposedUser2Points = task.proposedUser2Points,
                 recurrenceType = task.recurrenceType,
                 recurrenceInterval = task.recurrenceInterval
             )
@@ -577,7 +684,9 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
                 description = event.description,
                 defaultPoints = null,
                 createdById = event.createdBy.id,
-                createdByLabel = event.createdBy.email
+                createdByLabel = event.createdBy.email,
+                recurrenceType = event.recurrenceType,
+                recurrenceInterval = event.recurrenceInterval
             )
         }
 

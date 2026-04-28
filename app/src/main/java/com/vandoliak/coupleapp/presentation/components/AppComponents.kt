@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +41,12 @@ fun AppTopBar(
 ) {
     TopAppBar(
         modifier = modifier,
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.background,
+            titleContentColor = MaterialTheme.colorScheme.onBackground,
+            navigationIconContentColor = MaterialTheme.colorScheme.primary,
+            actionIconContentColor = MaterialTheme.colorScheme.primary
+        ),
         title = {
             Text(
                 text = title,
@@ -186,4 +194,65 @@ fun SelectionChip(
             selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
         )
     )
+}
+
+@Composable
+fun CouplePointsHeader(
+    myLabel: String,
+    myPoints: Int,
+    modifier: Modifier = Modifier,
+    partnerLabel: String? = null,
+    partnerPoints: Int? = null,
+    subtitle: String? = null
+) {
+    AppCard(modifier = modifier) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            subtitle?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                PointsStat(
+                    label = myLabel,
+                    points = myPoints,
+                    labelColor = MaterialTheme.colorScheme.primary
+                )
+
+                if (partnerLabel != null && partnerPoints != null) {
+                    PointsStat(
+                        label = partnerLabel,
+                        points = partnerPoints,
+                        labelColor = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PointsStat(
+    label: String,
+    points: Int,
+    modifier: Modifier = Modifier,
+    labelColor: androidx.compose.ui.graphics.Color
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = labelColor
+        )
+        PointBadge(points = points)
+    }
 }

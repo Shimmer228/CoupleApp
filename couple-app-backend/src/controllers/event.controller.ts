@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { Prisma } from "@prisma/client";
+import { Prisma, TaskRecurrenceType } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import { AuthenticatedRequest } from "../types/auth-request";
 import { getDayRange, parseRequiredDate } from "../utils/date";
@@ -21,6 +21,57 @@ const normalizeTitle = (value: string) => value.trim();
 const normalizeDescription = (value: unknown) => {
   const normalized = String(value ?? "").trim();
   return normalized || null;
+};
+
+const parseRecurrenceType = (value: unknown): TaskRecurrenceType => {
+  const normalized = String(value ?? "NONE").trim().toUpperCase();
+
+  if (
+    normalized === TaskRecurrenceType.NONE ||
+    normalized === TaskRecurrenceType.EVERY_X_DAYS ||
+    normalized === TaskRecurrenceType.WEEKLY ||
+    normalized === TaskRecurrenceType.MONTHLY
+  ) {
+    return normalized;
+  }
+
+  throw new Error("INVALID_RECURRENCE_TYPE");
+};
+
+const parseRecurrenceInterval = (type: TaskRecurrenceType, value: unknown) => {
+  if (type !== TaskRecurrenceType.EVERY_X_DAYS) {
+    return null;
+  }
+
+  const interval = Number(value);
+  if (!Number.isInteger(interval) || interval <= 0) {
+    throw new Error("INVALID_RECURRENCE_INTERVAL");
+  }
+
+  return interval;
+};
+
+const getGenerationHorizon = () => {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0, 23, 59, 59, 999));
+};
+
+const addRecurrence = (date: Date, type: TaskRecurrenceType, interval: number | null) => {
+  const next = new Date(date);
+
+  switch (type) {
+    case TaskRecurrenceType.EVERY_X_DAYS:
+      next.setUTCDate(next.getUTCDate() + (interval ?? 1));
+      return next;
+    case TaskRecurrenceType.WEEKLY:
+      next.setUTCDate(next.getUTCDate() + 7);
+      return next;
+    case TaskRecurrenceType.MONTHLY:
+      next.setUTCMonth(next.getUTCMonth() + 1);
+      return next;
+    default:
+      return next;
+  }
 };
 
 export const getCurrentUserContext = async (userId: string) => {
@@ -48,6 +99,132 @@ type EventCreationInput = {
   title: string;
   description?: string | null;
   date: Date;
+  recurrenceType: TaskRecurrenceType;
+  recurrenceInterval: number | null;
+};
+
+const createEventInstance = async (
+  tx: Prisma.TransactionClient,
+  input: {
+    title: string;
+    description: string | null;
+    date: Date;
+    pairId: string;
+    createdById: string;
+    recurrenceType: TaskRecurrenceType;
+    recurrenceInterval: number | null;
+    recurrenceParentId: string | null;
+  }
+) => {
+  return tx.event.create({
+    data: {
+      title: input.title,
+      description: input.description,
+      date: input.date,
+      pairId: input.pairId,
+      createdById: input.createdById,
+      recurrenceType: input.recurrenceType,
+      recurrenceInterval: input.recurrenceInterval,
+      recurrenceParentId: input.recurrenceParentId,
+    },
+    include: eventInclude,
+  });
+};
+
+const generateFutureRecurringEvents = async (
+  tx: Prisma.TransactionClient,
+  options: {
+    rootEventId: string;
+    title: string;
+    description: string | null;
+    pairId: string;
+    createdById: string;
+    date: Date;
+    recurrenceType: TaskRecurrenceType;
+    recurrenceInterval: number | null;
+  }
+) => {
+  if (options.recurrenceType === TaskRecurrenceType.NONE) {
+    return;
+  }
+
+  const horizon = getGenerationHorizon();
+  const relatedEvents = await tx.event.findMany({
+    where: {
+      OR: [
+        { id: options.rootEventId },
+        { recurrenceParentId: options.rootEventId },
+      ],
+    },
+    select: {
+      date: true,
+    },
+    orderBy: {
+      date: "asc",
+    },
+  });
+
+  const datedEvents = relatedEvents
+    .map((event) => event.date)
+    .filter((date): date is Date => date instanceof Date)
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  let lastDate = datedEvents.length > 0 ? datedEvents[datedEvents.length - 1] : options.date;
+
+  while (true) {
+    const nextDate = addRecurrence(lastDate, options.recurrenceType, options.recurrenceInterval);
+    if (nextDate.getTime() > horizon.getTime()) {
+      break;
+    }
+
+    await createEventInstance(tx, {
+      title: options.title,
+      description: options.description,
+      date: nextDate,
+      pairId: options.pairId,
+      createdById: options.createdById,
+      recurrenceType: options.recurrenceType,
+      recurrenceInterval: options.recurrenceInterval,
+      recurrenceParentId: options.rootEventId,
+    });
+
+    lastDate = nextDate;
+  }
+};
+
+const ensureRecurringEventsForPair = async (tx: Prisma.TransactionClient, pairId: string) => {
+  const recurringRoots = await tx.event.findMany({
+    where: {
+      pairId,
+      recurrenceType: {
+        not: TaskRecurrenceType.NONE,
+      },
+      recurrenceParentId: null,
+    },
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      pairId: true,
+      createdById: true,
+      date: true,
+      recurrenceType: true,
+      recurrenceInterval: true,
+    },
+  });
+
+  for (const event of recurringRoots) {
+    await generateFutureRecurringEvents(tx, {
+      rootEventId: event.id,
+      title: event.title,
+      description: event.description,
+      pairId: event.pairId,
+      createdById: event.createdById,
+      date: event.date,
+      recurrenceType: event.recurrenceType,
+      recurrenceInterval: event.recurrenceInterval,
+    });
+  }
 };
 
 export const createEventForUser = async (tx: Prisma.TransactionClient, input: EventCreationInput) => {
@@ -67,16 +244,29 @@ export const createEventForUser = async (tx: Prisma.TransactionClient, input: Ev
     throw new Error("PAIR_REQUIRED");
   }
 
-  const event = await tx.event.create({
-    data: {
+  const event = await createEventInstance(tx, {
+    title: input.title,
+    description: input.description ?? null,
+    date: input.date,
+    pairId: user.pairId,
+    createdById: input.userId,
+    recurrenceType: input.recurrenceType,
+    recurrenceInterval: input.recurrenceInterval,
+    recurrenceParentId: null,
+  });
+
+  if (input.recurrenceType !== TaskRecurrenceType.NONE) {
+    await generateFutureRecurringEvents(tx, {
+      rootEventId: event.id,
       title: input.title,
       description: input.description ?? null,
-      date: input.date,
       pairId: user.pairId,
       createdById: input.userId,
-    },
-    include: eventInclude,
-  });
+      date: input.date,
+      recurrenceType: input.recurrenceType,
+      recurrenceInterval: input.recurrenceInterval,
+    });
+  }
 
   return { event };
 };
@@ -122,6 +312,14 @@ const sendEventError = (res: Response, error: unknown) => {
     if (error.message === "EVENT_UPDATE_REQUIRED") {
       return res.status(400).json({ message: "Provide a title, description, or date to update" });
     }
+
+    if (error.message === "INVALID_RECURRENCE_TYPE") {
+      return res.status(400).json({ message: "Invalid recurrence type" });
+    }
+
+    if (error.message === "INVALID_RECURRENCE_INTERVAL") {
+      return res.status(400).json({ message: "Every X days recurrence needs a positive interval" });
+    }
   }
 
   console.error("Event controller error:", error);
@@ -133,6 +331,8 @@ export const createEvent = async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.userId;
     const title = normalizeTitle(String(req.body.title ?? ""));
     const description = normalizeDescription(req.body.description);
+    const recurrenceType = parseRecurrenceType(req.body.recurrenceType);
+    const recurrenceInterval = parseRecurrenceInterval(recurrenceType, req.body.recurrenceInterval);
 
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -150,6 +350,8 @@ export const createEvent = async (req: AuthenticatedRequest, res: Response) => {
         title,
         description,
         date,
+        recurrenceType,
+        recurrenceInterval,
       })
     );
 
@@ -244,6 +446,10 @@ export const getEventsForDate = async (req: AuthenticatedRequest, res: Response)
     const user = await getCurrentUserContext(userId);
     const { start, end } = getDayRange(date);
 
+    await prisma.$transaction(async (tx) => {
+      await ensureRecurringEventsForPair(tx, user.pairId!);
+    });
+
     const events = await prisma.event.findMany({
       where: {
         pairId: user.pairId!,
@@ -271,6 +477,10 @@ export const getAllEvents = async (req: AuthenticatedRequest, res: Response) => 
     }
 
     const user = await getCurrentUserContext(userId);
+
+    await prisma.$transaction(async (tx) => {
+      await ensureRecurringEventsForPair(tx, user.pairId!);
+    });
 
     const events = await prisma.event.findMany({
       where: { pairId: user.pairId! },

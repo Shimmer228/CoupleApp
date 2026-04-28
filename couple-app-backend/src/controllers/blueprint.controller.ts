@@ -1,4 +1,4 @@
-import { BlueprintType, Prisma, TaskRecurrenceType } from "@prisma/client";
+import { BlueprintType, Prisma, TaskRecurrenceType, TaskType } from "../../node_modules/.prisma/client";
 import { Response } from "express";
 import { prisma } from "../config/prisma";
 import { AuthenticatedRequest } from "../types/auth-request";
@@ -224,6 +224,7 @@ export const useBlueprint = async (req: AuthenticatedRequest, res: Response) => 
         const taskResult = await createTaskForUser(tx, {
           userId,
           title: blueprint.title,
+          taskType: TaskType.CHALLENGE,
           points: blueprintPoints,
           dueDate: createDateForDayAndTime(date, blueprint.defaultDueTime),
           recurrenceType: TaskRecurrenceType.NONE,
@@ -242,6 +243,8 @@ export const useBlueprint = async (req: AuthenticatedRequest, res: Response) => 
         title: blueprint.title,
         description: blueprint.description,
         date: createDateForDayAndTime(date, blueprint.defaultTime),
+        recurrenceType: TaskRecurrenceType.NONE,
+        recurrenceInterval: null,
       });
 
       return {

@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,20 +42,29 @@ import com.vandoliak.coupleapp.data.remote.MyProfileDto
 import com.vandoliak.coupleapp.data.remote.PartnerProfileDto
 import com.vandoliak.coupleapp.data.remote.RewardPurchaseDto
 import com.vandoliak.coupleapp.presentation.components.AppCard
+import com.vandoliak.coupleapp.presentation.components.CouplePointsHeader
 import com.vandoliak.coupleapp.presentation.components.PrimaryActionButton
+import com.vandoliak.coupleapp.presentation.components.PointBadge
 import com.vandoliak.coupleapp.presentation.components.ProfileAvatar
 import com.vandoliak.coupleapp.presentation.components.SectionTitle
 import com.vandoliak.coupleapp.presentation.util.avatarOptionLabel
+import com.vandoliak.coupleapp.presentation.viewmodel.NotificationViewModel
 import com.vandoliak.coupleapp.presentation.viewmodel.ProfileViewModel
 
 @Composable
 fun ProfileScreen(
     modifier: Modifier = Modifier,
     onNavigateToShop: (() -> Unit)? = null,
-    onNavigateToSettings: (() -> Unit)? = null
+    onNavigateToSettings: (() -> Unit)? = null,
+    onNavigateToNotifications: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val viewModel: ProfileViewModel = viewModel(
+        factory = ViewModelProvider.AndroidViewModelFactory(
+            context.applicationContext as Application
+        )
+    )
+    val notificationViewModel: NotificationViewModel = viewModel(
         factory = ViewModelProvider.AndroidViewModelFactory(
             context.applicationContext as Application
         )
@@ -68,6 +79,7 @@ fun ProfileScreen(
 
     LaunchedEffect(Unit) {
         viewModel.loadProfile()
+        notificationViewModel.loadUnreadCount()
     }
 
     Column(
@@ -88,10 +100,23 @@ fun ProfileScreen(
             }
         } else {
             viewModel.myProfile.value?.let { profile ->
+                CouplePointsHeader(
+                    myLabel = stringResource(R.string.my_points_label),
+                    myPoints = profile.points,
+                    partnerLabel = viewModel.partnerProfile.value?.let { partner ->
+                        partner.nickname ?: stringResource(R.string.partner_points_label)
+                    },
+                    partnerPoints = viewModel.partnerProfile.value?.points,
+                    subtitle = stringResource(R.string.points_header_subtitle)
+                )
+            }
+
+            viewModel.myProfile.value?.let { profile ->
                 MyProfileCard(
                     profile = profile,
                     nickname = viewModel.nickname.value,
                     avatarKey = viewModel.avatarKey.value,
+                    avatarPreviewBytes = viewModel.localAvatarPreviewBytes.value,
                     avatarOptions = viewModel.avatarOptions,
                     isSaving = viewModel.isSaving.value,
                     isUploadingAvatar = viewModel.isUploadingAvatar.value,
@@ -100,7 +125,9 @@ fun ProfileScreen(
                     onSave = viewModel::saveProfile,
                     onPickAvatar = { imagePicker.launch("image/*") },
                     onNavigateToShop = onNavigateToShop,
-                    onNavigateToSettings = onNavigateToSettings
+                    onNavigateToSettings = onNavigateToSettings,
+                    unreadNotifications = notificationViewModel.unreadCount.value,
+                    onNavigateToNotifications = onNavigateToNotifications
                 )
             }
 
@@ -131,6 +158,7 @@ private fun MyProfileCard(
     profile: MyProfileDto,
     nickname: String,
     avatarKey: String,
+    avatarPreviewBytes: ByteArray?,
     avatarOptions: List<String>,
     isSaving: Boolean,
     isUploadingAvatar: Boolean,
@@ -139,7 +167,9 @@ private fun MyProfileCard(
     onSave: () -> Unit,
     onPickAvatar: () -> Unit,
     onNavigateToShop: (() -> Unit)?,
-    onNavigateToSettings: (() -> Unit)?
+    onNavigateToSettings: (() -> Unit)?,
+    unreadNotifications: Int,
+    onNavigateToNotifications: (() -> Unit)?
 ) {
     AppCard {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -155,6 +185,7 @@ private fun MyProfileCard(
                     ProfileAvatar(
                         avatarKey = avatarKey,
                         avatarUrl = profile.avatarUrl,
+                        localAvatarBytes = avatarPreviewBytes,
                         size = 88.dp
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -163,7 +194,6 @@ private fun MyProfileCard(
                             style = MaterialTheme.typography.titleLarge
                         )
                         Text(text = profile.email)
-                        Text(text = "${stringResource(R.string.points)}: ${profile.points}")
                         Text(text = "\uD83D\uDD25 ${stringResource(R.string.streak)}: ${profile.winStreak}")
                         if (profile.isWeeklyWinner) {
                             Text(
@@ -174,12 +204,40 @@ private fun MyProfileCard(
                     }
                 }
 
-                onNavigateToSettings?.let {
-                    IconButton(onClick = it) {
-                        Icon(
-                            imageVector = Icons.Outlined.Settings,
-                            contentDescription = stringResource(R.string.settings)
-                        )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    onNavigateToNotifications?.let {
+                        Box {
+                            IconButton(onClick = it) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Notifications,
+                                    contentDescription = stringResource(R.string.notifications)
+                                )
+                            }
+
+                            if (unreadNotifications > 0) {
+                                Surface(
+                                    modifier = Modifier.align(Alignment.TopEnd),
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                    color = MaterialTheme.colorScheme.error
+                                ) {
+                                    Text(
+                                        text = unreadNotifications.coerceAtMost(99).toString(),
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                        color = MaterialTheme.colorScheme.onError,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    onNavigateToSettings?.let {
+                        IconButton(onClick = it) {
+                            Icon(
+                                imageVector = Icons.Outlined.Settings,
+                                contentDescription = stringResource(R.string.settings)
+                            )
+                        }
                     }
                 }
             }
@@ -296,7 +354,6 @@ private fun PartnerProfileCard(profile: PartnerProfileDto?) {
                         style = MaterialTheme.typography.titleMedium
                     )
                     Text(text = profile.email)
-                    Text(text = "${stringResource(R.string.points)}: ${profile.points}")
                     Text(text = "\uD83D\uDD25 ${stringResource(R.string.streak)}: ${profile.winStreak}")
                     if (profile.isWeeklyWinner) {
                         Text(
@@ -328,7 +385,7 @@ private fun PurchaseHistoryCard(purchases: List<RewardPurchaseDto>) {
                             text = purchase.reward.title,
                             style = MaterialTheme.typography.titleMedium
                         )
-                        Text(text = stringResource(R.string.cost_points, purchase.reward.cost))
+                        PointBadge(points = purchase.reward.cost)
                         Text(text = stringResource(R.string.required_streak, purchase.reward.minStreak))
                     }
                 }

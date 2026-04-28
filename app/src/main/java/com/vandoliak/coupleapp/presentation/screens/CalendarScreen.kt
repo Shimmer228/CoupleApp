@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
@@ -58,6 +60,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.data.remote.BlueprintDto
 import com.vandoliak.coupleapp.presentation.components.EmptyState
+import com.vandoliak.coupleapp.presentation.components.PointBadge
 import com.vandoliak.coupleapp.presentation.components.SectionTitle
 import com.vandoliak.coupleapp.presentation.components.SelectionChip
 import com.vandoliak.coupleapp.presentation.util.blueprintTypeLabel
@@ -66,6 +69,7 @@ import com.vandoliak.coupleapp.presentation.util.formatMonthTitle
 import com.vandoliak.coupleapp.presentation.util.recurrenceLabel
 import com.vandoliak.coupleapp.presentation.util.scopeLabel
 import com.vandoliak.coupleapp.presentation.util.taskStatusLabel
+import com.vandoliak.coupleapp.presentation.util.taskTypeLabel
 import com.vandoliak.coupleapp.presentation.util.toDateInput
 import com.vandoliak.coupleapp.presentation.util.transactionCategoryLabel
 import com.vandoliak.coupleapp.presentation.viewmodel.BlueprintViewModel
@@ -73,6 +77,11 @@ import com.vandoliak.coupleapp.presentation.viewmodel.CalendarDayUi
 import com.vandoliak.coupleapp.presentation.viewmodel.CalendarItemType
 import com.vandoliak.coupleapp.presentation.viewmodel.CalendarItemUi
 import com.vandoliak.coupleapp.presentation.viewmodel.CalendarViewModel
+
+private enum class CalendarSharedSplitMode {
+    PROPOSE,
+    COUNTER
+}
 
 @androidx.compose.material3.ExperimentalMaterial3Api
 @Composable
@@ -308,16 +317,18 @@ private fun CompactPreviewChip(
     currentUserId: String?
 ) {
     val colors = MaterialTheme.colorScheme
-    val isCurrentUserTask = item.type == CalendarItemType.TASK && item.assignedToId == currentUserId
+    val isSharedTask = item.taskType == "SHARED"
     val backgroundColor = when {
         item.type == CalendarItemType.EVENT -> colors.surfaceVariant.copy(alpha = 0.85f)
-        isCurrentUserTask -> colors.primaryContainer.copy(alpha = 0.95f)
-        else -> colors.tertiaryContainer.copy(alpha = 0.95f)
+        isSharedTask -> colors.secondaryContainer.copy(alpha = 0.95f)
+        item.assignedToId == currentUserId -> colors.tertiaryContainer.copy(alpha = 0.95f)
+        else -> colors.primaryContainer.copy(alpha = 0.95f)
     }
     val textColor = when {
         item.type == CalendarItemType.EVENT -> colors.onSurfaceVariant
-        isCurrentUserTask -> colors.onPrimaryContainer
-        else -> colors.onTertiaryContainer
+        isSharedTask -> colors.onSecondaryContainer
+        item.assignedToId == currentUserId -> colors.onTertiaryContainer
+        else -> colors.onPrimaryContainer
     }
 
     Box(
@@ -351,10 +362,45 @@ private fun SelectedDaySheet(
     val selectedDate = calendarViewModel.selectedDate.value
     val selectedItems = calendarViewModel.selectedDayItems.value
     val currentUserId = calendarViewModel.currentUserId.value
+    val partnerId = calendarViewModel.partnerId.value
     val scrollState = rememberScrollState()
     var showBlueprints by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<CalendarItemUi?>(null) }
     var deletingItem by remember { mutableStateOf<CalendarItemUi?>(null) }
+    var showCreateEventDialog by remember { mutableStateOf(false) }
+    var showCreateTaskDialog by remember { mutableStateOf(false) }
+    var splitDialogItem by remember { mutableStateOf<CalendarItemUi?>(null) }
+    var splitDialogMode by remember { mutableStateOf(CalendarSharedSplitMode.PROPOSE) }
+
+    if (showCreateEventDialog) {
+        CreateEventDialog(
+            calendarViewModel = calendarViewModel,
+            onDismiss = {
+                showCreateEventDialog = false
+                calendarViewModel.resetEventForm()
+            },
+            onCreate = {
+                calendarViewModel.createEventForSelectedDay {
+                    showCreateEventDialog = false
+                }
+            }
+        )
+    }
+
+    if (showCreateTaskDialog) {
+        CreateTaskDialog(
+            calendarViewModel = calendarViewModel,
+            onDismiss = {
+                showCreateTaskDialog = false
+                calendarViewModel.resetTaskForm()
+            },
+            onCreate = {
+                calendarViewModel.createTaskForSelectedDay {
+                    showCreateTaskDialog = false
+                }
+            }
+        )
+    }
 
     editingItem?.let { item ->
         if (item.type == CalendarItemType.EVENT) {
@@ -402,6 +448,34 @@ private fun SelectedDaySheet(
         )
     }
 
+    splitDialogItem?.let { item ->
+        SharedCalendarSplitDialog(
+            item = item,
+            currentUserId = currentUserId,
+            partnerId = partnerId,
+            errorMessage = calendarViewModel.error.value,
+            isSubmitting = calendarViewModel.isSubmitting.value,
+            mode = splitDialogMode,
+            onDismiss = { splitDialogItem = null },
+            onSubmit = { myPoints, partnerPoints ->
+                when (splitDialogMode) {
+                    CalendarSharedSplitMode.PROPOSE -> calendarViewModel.proposeSharedSplit(
+                        taskId = item.sourceId,
+                        myPoints = myPoints,
+                        partnerPoints = partnerPoints,
+                        onSuccess = { splitDialogItem = null }
+                    )
+                    CalendarSharedSplitMode.COUNTER -> calendarViewModel.counterSharedSplit(
+                        taskId = item.sourceId,
+                        myPoints = myPoints,
+                        partnerPoints = partnerPoints,
+                        onSuccess = { splitDialogItem = null }
+                    )
+                }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -422,7 +496,14 @@ private fun SelectedDaySheet(
             )
         }
 
-        calendarViewModel.error.value?.takeIf { it.isNotBlank() }?.let { message ->
+        calendarViewModel.error.value?.takeIf {
+            it.isNotBlank() &&
+                !showCreateEventDialog &&
+                !showCreateTaskDialog &&
+                editingItem == null &&
+                deletingItem == null &&
+                splitDialogItem == null
+        }?.let { message ->
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
@@ -457,6 +538,7 @@ private fun SelectedDaySheet(
                     DayDetailItemCard(
                         item = item,
                         currentUserId = currentUserId,
+                        partnerId = partnerId,
                         isBusy = calendarViewModel.isSubmitting.value || blueprintViewModel.isSubmitting.value,
                         onSaveAsBlueprint = {
                             blueprintViewModel.createBlueprint(
@@ -473,7 +555,12 @@ private fun SelectedDaySheet(
                         onConfirmCompletion = { calendarViewModel.confirmTaskCompletion(item.sourceId) },
                         onRejectCompletion = { calendarViewModel.rejectTaskCompletion(item.sourceId) },
                         onReturn = { calendarViewModel.returnTask(item.sourceId) },
-                        onFail = { calendarViewModel.failTask(item.sourceId) }
+                        onFail = { calendarViewModel.failTask(item.sourceId) },
+                        onOpenSharedSplit = { mode ->
+                            splitDialogItem = item
+                            splitDialogMode = mode
+                        },
+                        onAcceptSharedSplit = { calendarViewModel.acceptSharedSplit(item.sourceId) }
                     )
                 }
             }
@@ -483,72 +570,39 @@ private fun SelectedDaySheet(
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle(
-                title = stringResource(R.string.create_event_title),
-                subtitle = stringResource(R.string.create_event_subtitle)
-            )
-
-            OutlinedTextField(
-                value = calendarViewModel.eventTitle.value,
-                onValueChange = calendarViewModel::onEventTitleChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.title)) },
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                value = calendarViewModel.eventDescription.value,
-                onValueChange = calendarViewModel::onEventDescriptionChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.description)) },
-                maxLines = 3
+                title = stringResource(R.string.create_for_day_title),
+                subtitle = stringResource(R.string.create_for_day_subtitle)
             )
 
             Button(
-                onClick = calendarViewModel::createEventForSelectedDay,
+                onClick = {
+                    calendarViewModel.resetEventForm()
+                    showCreateEventDialog = true
+                },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !calendarViewModel.isSubmitting.value && !blueprintViewModel.isSubmitting.value
             ) {
+                Icon(
+                    imageVector = Icons.Outlined.Add,
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
                 Text(stringResource(R.string.create_event_button))
             }
-        }
-
-        HorizontalDivider()
-
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            SectionTitle(
-                title = stringResource(R.string.create_task_title),
-                subtitle = stringResource(R.string.create_task_subtitle)
-            )
-
-            OutlinedTextField(
-                value = calendarViewModel.taskTitle.value,
-                onValueChange = calendarViewModel::onTaskTitleChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.title)) },
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                value = calendarViewModel.taskPoints.value,
-                onValueChange = calendarViewModel::onTaskPointsChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.points)) },
-                singleLine = true
-            )
-
-            RecurrenceSelector(
-                recurrenceType = calendarViewModel.recurrenceType.value,
-                recurrenceInterval = calendarViewModel.recurrenceInterval.value,
-                isSubmitting = calendarViewModel.isSubmitting.value || blueprintViewModel.isSubmitting.value,
-                onRecurrenceTypeChange = calendarViewModel::onRecurrenceTypeChange,
-                onRecurrenceIntervalChange = calendarViewModel::onRecurrenceIntervalChange
-            )
 
             Button(
-                onClick = calendarViewModel::createTaskForSelectedDay,
+                onClick = {
+                    calendarViewModel.resetTaskForm()
+                    showCreateTaskDialog = true
+                },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !calendarViewModel.isSubmitting.value && !blueprintViewModel.isSubmitting.value
             ) {
+                Icon(
+                    imageVector = Icons.Outlined.Add,
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
                 Text(stringResource(R.string.create_task_button))
             }
         }
@@ -620,6 +674,7 @@ private fun SelectedDaySheet(
 private fun DayDetailItemCard(
     item: CalendarItemUi,
     currentUserId: String?,
+    partnerId: String?,
     isBusy: Boolean,
     onSaveAsBlueprint: () -> Unit,
     onEdit: () -> Unit,
@@ -628,14 +683,25 @@ private fun DayDetailItemCard(
     onConfirmCompletion: () -> Unit,
     onRejectCompletion: () -> Unit,
     onReturn: () -> Unit,
-    onFail: () -> Unit
+    onFail: () -> Unit,
+    onOpenSharedSplit: (CalendarSharedSplitMode) -> Unit,
+    onAcceptSharedSplit: () -> Unit
 ) {
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
-    val accent = if (item.type == CalendarItemType.TASK) colors.tertiary else colors.primary
+    val accent = when {
+        item.type == CalendarItemType.EVENT -> colors.primary
+        item.taskType == "SHARED" -> colors.secondary
+        else -> colors.tertiary
+    }
     val canEdit = item.createdById == currentUserId && (item.type == CalendarItemType.EVENT || item.status == "ACTIVE")
     val isAssignedToCurrentUser = item.assignedToId == currentUserId
-    val completionRequestedByCurrentUser = item.completionRequestedById == currentUserId
+    val waitingActionRequestedByCurrentUser = if (item.taskType == "SHARED") {
+        item.proposedById == currentUserId
+    } else {
+        item.completionRequestedById == currentUserId
+    }
+    val sharedSplit = item.sharedSplitForViewer(currentUserId, partnerId)
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -661,7 +727,7 @@ private fun DayDetailItemCard(
                 )
                 Text(
                     text = if (item.type == CalendarItemType.TASK) {
-                        stringResource(R.string.task_label)
+                        context.taskTypeLabel(item.taskType ?: "CHALLENGE")
                     } else {
                         stringResource(R.string.event_label)
                     },
@@ -693,9 +759,9 @@ private fun DayDetailItemCard(
             item.status?.let { status ->
                 Text(
                     text = if (status == "WAITING_CONFIRMATION") {
-                        context.taskStatusLabel(status, completionRequestedByCurrentUser)
+                        context.taskStatusLabel(status, waitingActionRequestedByCurrentUser, item.taskType ?: "CHALLENGE")
                     } else {
-                        stringResource(R.string.status_format, context.taskStatusLabel(status, completionRequestedByCurrentUser))
+                        stringResource(R.string.status_format, context.taskStatusLabel(status, waitingActionRequestedByCurrentUser, item.taskType ?: "CHALLENGE"))
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (status == "WAITING_CONFIRMATION") colors.primary else colors.onSurfaceVariant
@@ -718,17 +784,35 @@ private fun DayDetailItemCard(
                 )
             }
 
-            item.recurrenceType?.let { recurrenceType ->
-                if (item.type == CalendarItemType.TASK) {
+            if (item.type == CalendarItemType.TASK) {
+                item.defaultPoints?.let { points ->
+                    PointBadge(points = points)
+                }
+            }
+
+            if (item.taskType == "SHARED") {
+                sharedSplit?.let { (myPoints, partnerPoints) ->
                     Text(
-                        text = stringResource(
-                            R.string.recurrence_format,
-                            context.recurrenceLabel(recurrenceType, item.recurrenceInterval)
-                        ),
+                        text = if (item.proposedById == currentUserId) {
+                            stringResource(R.string.shared_split_waiting_breakdown, myPoints, partnerPoints)
+                        } else {
+                            stringResource(R.string.shared_split_partner_breakdown, myPoints, partnerPoints)
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant
+                        color = colors.primary
                     )
                 }
+            }
+
+            item.recurrenceType?.takeIf { it != "NONE" }?.let { recurrenceType ->
+                Text(
+                    text = stringResource(
+                        R.string.recurrence_format,
+                        context.recurrenceLabel(recurrenceType, item.recurrenceInterval)
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant
+                )
             }
 
             TextButton(
@@ -758,6 +842,48 @@ private fun DayDetailItemCard(
             }
 
             if (item.type == CalendarItemType.TASK) {
+                if (item.taskType == "SHARED") {
+                    when {
+                        item.status == "ACTIVE" -> {
+                            Button(
+                                onClick = { onOpenSharedSplit(CalendarSharedSplitMode.PROPOSE) },
+                                enabled = !isBusy,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(stringResource(R.string.propose_completion_split))
+                            }
+                        }
+
+                        item.status == "WAITING_CONFIRMATION" && item.proposedById != currentUserId -> {
+                            Button(
+                                onClick = onAcceptSharedSplit,
+                                enabled = !isBusy,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(stringResource(R.string.accept_split))
+                            }
+
+                            OutlinedButton(
+                                onClick = { onOpenSharedSplit(CalendarSharedSplitMode.COUNTER) },
+                                enabled = !isBusy,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(stringResource(R.string.counter_split))
+                            }
+                        }
+
+                        item.status == "WAITING_CONFIRMATION" -> {
+                            Text(
+                                text = stringResource(R.string.shared_split_waiting_partner),
+                                color = colors.primary,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+
+                    return@Column
+                }
+
                 when {
                     item.status == "ACTIVE" && isAssignedToCurrentUser -> {
                         Button(
@@ -785,7 +911,7 @@ private fun DayDetailItemCard(
                         }
                     }
 
-                    item.status == "WAITING_CONFIRMATION" && !completionRequestedByCurrentUser -> {
+                    item.status == "WAITING_CONFIRMATION" && !waitingActionRequestedByCurrentUser -> {
                         Button(
                             onClick = onConfirmCompletion,
                             enabled = !isBusy,
@@ -806,6 +932,244 @@ private fun DayDetailItemCard(
             }
         }
     }
+}
+
+@Composable
+private fun CreateEventDialog(
+    calendarViewModel: CalendarViewModel,
+    onDismiss: () -> Unit,
+    onCreate: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.create_event_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                calendarViewModel.error.value?.takeIf { it.isNotBlank() }?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                OutlinedTextField(
+                    value = calendarViewModel.eventTitle.value,
+                    onValueChange = calendarViewModel::onEventTitleChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.title)) },
+                    singleLine = true,
+                    enabled = !calendarViewModel.isSubmitting.value
+                )
+                OutlinedTextField(
+                    value = calendarViewModel.eventDescription.value,
+                    onValueChange = calendarViewModel::onEventDescriptionChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.description)) },
+                    maxLines = 3,
+                    enabled = !calendarViewModel.isSubmitting.value
+                )
+                RecurrenceSelector(
+                    recurrenceType = calendarViewModel.eventRecurrenceType.value,
+                    recurrenceInterval = calendarViewModel.eventRecurrenceInterval.value,
+                    isSubmitting = calendarViewModel.isSubmitting.value,
+                    onRecurrenceTypeChange = calendarViewModel::onEventRecurrenceTypeChange,
+                    onRecurrenceIntervalChange = calendarViewModel::onEventRecurrenceIntervalChange
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onCreate,
+                enabled = !calendarViewModel.isSubmitting.value
+            ) {
+                Text(
+                    if (calendarViewModel.isSubmitting.value) {
+                        stringResource(R.string.creating)
+                    } else {
+                        stringResource(R.string.create_event_button)
+                    }
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun CreateTaskDialog(
+    calendarViewModel: CalendarViewModel,
+    onDismiss: () -> Unit,
+    onCreate: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.create_task_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                calendarViewModel.error.value?.takeIf { it.isNotBlank() }?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                OutlinedTextField(
+                    value = calendarViewModel.taskTitle.value,
+                    onValueChange = calendarViewModel::onTaskTitleChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.title)) },
+                    singleLine = true,
+                    enabled = !calendarViewModel.isSubmitting.value
+                )
+                OutlinedTextField(
+                    value = calendarViewModel.taskPoints.value,
+                    onValueChange = calendarViewModel::onTaskPointsChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.points)) },
+                    singleLine = true,
+                    enabled = !calendarViewModel.isSubmitting.value
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("CHALLENGE", "SHARED").forEach { value ->
+                        SelectionChip(
+                            label = LocalContext.current.taskTypeLabel(value),
+                            selected = calendarViewModel.taskType.value == value,
+                            onClick = { calendarViewModel.onTaskTypeChange(value) },
+                            enabled = !calendarViewModel.isSubmitting.value
+                        )
+                    }
+                }
+                Text(
+                    text = if (calendarViewModel.taskType.value == "SHARED") {
+                        stringResource(R.string.shared_task_explainer)
+                    } else {
+                        stringResource(R.string.challenge_task_explainer)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                RecurrenceSelector(
+                    recurrenceType = calendarViewModel.recurrenceType.value,
+                    recurrenceInterval = calendarViewModel.recurrenceInterval.value,
+                    isSubmitting = calendarViewModel.isSubmitting.value,
+                    onRecurrenceTypeChange = calendarViewModel::onRecurrenceTypeChange,
+                    onRecurrenceIntervalChange = calendarViewModel::onRecurrenceIntervalChange
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onCreate,
+                enabled = !calendarViewModel.isSubmitting.value
+            ) {
+                Text(
+                    if (calendarViewModel.isSubmitting.value) {
+                        stringResource(R.string.creating)
+                    } else {
+                        stringResource(R.string.create_task_button)
+                    }
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun SharedCalendarSplitDialog(
+    item: CalendarItemUi,
+    currentUserId: String?,
+    partnerId: String?,
+    errorMessage: String?,
+    isSubmitting: Boolean,
+    mode: CalendarSharedSplitMode,
+    onDismiss: () -> Unit,
+    onSubmit: (Int, Int) -> Unit
+) {
+    val initialSplit = item.sharedSplitForViewer(currentUserId, partnerId) ?: defaultSharedSplit(item.defaultPoints ?: 0)
+    var myPoints by remember(item.sourceId, mode) { mutableStateOf(initialSplit.first.toString()) }
+    var partnerPoints by remember(item.sourceId, mode) { mutableStateOf(initialSplit.second.toString()) }
+    val bank = item.defaultPoints ?: 0
+    val localError = validateSharedSplitInput(bank, myPoints, partnerPoints)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.shared_split_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(stringResource(R.string.shared_split_subtitle, bank))
+
+                errorMessage?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                localError?.let {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                OutlinedTextField(
+                    value = myPoints,
+                    onValueChange = { myPoints = it.filter(Char::isDigit) },
+                    label = { Text(stringResource(R.string.my_reward_points)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSubmitting
+                )
+
+                OutlinedTextField(
+                    value = partnerPoints,
+                    onValueChange = { partnerPoints = it.filter(Char::isDigit) },
+                    label = { Text(stringResource(R.string.partner_reward_points)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSubmitting
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val myValue = myPoints.toIntOrNull() ?: return@TextButton
+                    val partnerValue = partnerPoints.toIntOrNull() ?: return@TextButton
+                    onSubmit(myValue, partnerValue)
+                },
+                enabled = !isSubmitting && localError == null
+            ) {
+                Text(
+                    if (mode == CalendarSharedSplitMode.COUNTER) {
+                        stringResource(R.string.counter_split)
+                    } else {
+                        stringResource(R.string.propose_completion_split)
+                    }
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
 }
 
 @Composable
@@ -853,6 +1217,33 @@ private fun EditEventDialog(
             }
         }
     )
+}
+
+private fun CalendarItemUi.sharedSplitForViewer(currentUserId: String?, partnerId: String?): Pair<Int, Int>? {
+    val myId = currentUserId ?: return null
+    val otherId = partnerId ?: return null
+    val first = proposedUser1Points ?: return null
+    val second = proposedUser2Points ?: return null
+    val ordered = listOf(myId, otherId).sorted()
+    return if (ordered.first() == myId) first to second else second to first
+}
+
+private fun defaultSharedSplit(bank: Int): Pair<Int, Int> {
+    val myPoints = (bank + 1) / 2
+    return myPoints to (bank - myPoints)
+}
+
+@Composable
+private fun validateSharedSplitInput(bank: Int, myPoints: String, partnerPoints: String): String? {
+    val myValue = myPoints.toIntOrNull()
+    val partnerValue = partnerPoints.toIntOrNull()
+    if (myValue == null || partnerValue == null || myValue < 0 || partnerValue < 0) {
+        return stringResource(R.string.points_positive)
+    }
+    if (myValue + partnerValue != bank) {
+        return stringResource(R.string.shared_split_sum_mismatch)
+    }
+    return null
 }
 
 @Composable
@@ -1011,7 +1402,7 @@ private fun RecurrenceSelector(
             subtitle = stringResource(R.string.recurrence_subtitle)
         )
 
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {

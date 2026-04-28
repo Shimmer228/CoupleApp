@@ -11,6 +11,7 @@ import retrofit2.http.Path
 
 data class TaskCreateRequest(
     val title: String,
+    val type: String,
     val points: Int,
     val dueDate: String?,
     val recurrenceType: String,
@@ -27,14 +28,24 @@ data class TaskUserDto(
     val email: String
 )
 
+data class SharedSplitRequest(
+    val myPoints: Int,
+    val partnerPoints: Int
+)
+
 data class TaskDto(
     val id: String,
     val title: String,
     val bank: Int,
+    val type: String,
     val status: String,
-    val assignedTo: TaskUserDto,
+    val sharedSplitStatus: String,
+    val assignedTo: TaskUserDto?,
     val createdBy: TaskUserDto,
     val completionRequestedBy: TaskUserDto?,
+    val proposedBy: TaskUserDto?,
+    val proposedUser1Points: Int?,
+    val proposedUser2Points: Int?,
     val dueDate: String?,
     val recurrenceType: String,
     val recurrenceInterval: Int?,
@@ -121,5 +132,25 @@ interface TaskApi {
     suspend fun failTask(
         @Header("Authorization") authorization: String,
         @Path("id") taskId: String
+    ): Response<TaskActionResponse>
+
+    @POST("api/tasks/shared/{id}/propose-split")
+    suspend fun proposeSharedSplit(
+        @Header("Authorization") authorization: String,
+        @Path("id") taskId: String,
+        @Body request: SharedSplitRequest
+    ): Response<TaskActionResponse>
+
+    @POST("api/tasks/shared/{id}/accept-split")
+    suspend fun acceptSharedSplit(
+        @Header("Authorization") authorization: String,
+        @Path("id") taskId: String
+    ): Response<TaskActionResponse>
+
+    @POST("api/tasks/shared/{id}/counter-split")
+    suspend fun counterSharedSplit(
+        @Header("Authorization") authorization: String,
+        @Path("id") taskId: String,
+        @Body request: SharedSplitRequest
     ): Response<TaskActionResponse>
 }

@@ -11,6 +11,7 @@ import wishlistRoutes from "./routes/wishlist.routes";
 import profileRoutes from "./routes/profile.routes";
 import rewardRoutes from "./routes/reward.routes";
 import blueprintRoutes from "./routes/blueprint.routes";
+import notificationRoutes from "./routes/notification.routes";
 import { ensureAvatarUploadDir } from "./utils/avatar-storage";
 
 dotenv.config();
@@ -30,6 +31,7 @@ app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/rewards", rewardRoutes);
 app.use("/api/blueprints", blueprintRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 app.get("/", (req, res) => {
   res.send("API is working");

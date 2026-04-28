@@ -36,6 +36,9 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
     var purchases = mutableStateOf<List<RewardPurchaseDto>>(emptyList())
         private set
 
+    var localAvatarPreviewBytes = mutableStateOf<ByteArray?>(null)
+        private set
+
     var nickname = mutableStateOf("")
         private set
 
@@ -63,6 +66,7 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onAvatarKeyChange(value: String) {
         avatarKey.value = value
+        localAvatarPreviewBytes.value = null
     }
 
     fun loadProfile() {
@@ -183,6 +187,7 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
                 isUploadingAvatar.value = true
                 error.value = null
                 successMessage.value = null
+                localAvatarPreviewBytes.value = bytes
 
                 val requestBody = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
                 val filePart = MultipartBody.Part.createFormData(
@@ -205,6 +210,7 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
                 successMessage.value = appString(R.string.avatar_uploaded)
                 loadProfile()
             } catch (e: Exception) {
+                localAvatarPreviewBytes.value = null
                 error.value = e.message ?: appString(R.string.unknown_error)
             } finally {
                 isUploadingAvatar.value = false

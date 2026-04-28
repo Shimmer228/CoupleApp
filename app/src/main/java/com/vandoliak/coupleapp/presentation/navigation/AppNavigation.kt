@@ -10,6 +10,7 @@ import com.vandoliak.coupleapp.data.local.SessionDestination
 import com.vandoliak.coupleapp.data.local.SessionEvents
 import com.vandoliak.coupleapp.presentation.screens.HomeScreen
 import com.vandoliak.coupleapp.presentation.screens.LoginScreen
+import com.vandoliak.coupleapp.presentation.screens.NotificationsScreen
 import com.vandoliak.coupleapp.presentation.screens.PairScreen
 import com.vandoliak.coupleapp.presentation.screens.RegisterScreen
 import com.vandoliak.coupleapp.presentation.screens.SettingsScreen
@@ -96,6 +97,9 @@ fun AppNavigation(
                 },
                 onNavigateToSettings = {
                     navController.navigate("settings")
+                },
+                onNavigateToNotifications = {
+                    navController.navigate("notifications")
                 }
             )
         }
@@ -111,6 +115,14 @@ fun AppNavigation(
         composable("settings") {
             SettingsScreen(
                 modifier = Modifier,
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable("notifications") {
+            NotificationsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
                 }

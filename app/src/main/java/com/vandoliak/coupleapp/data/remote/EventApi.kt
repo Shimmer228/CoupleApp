@@ -13,7 +13,9 @@ import retrofit2.http.Path
 data class EventCreateRequest(
     val title: String,
     val description: String?,
-    val date: String
+    val date: String,
+    val recurrenceType: String = "NONE",
+    val recurrenceInterval: Int? = null
 )
 
 data class EventUpdateRequest(
@@ -32,6 +34,9 @@ data class EventDto(
     val title: String,
     val description: String?,
     val date: String,
+    val recurrenceType: String,
+    val recurrenceInterval: Int?,
+    val recurrenceParentId: String?,
     val createdBy: EventUserDto,
     val createdAt: String
 )

@@ -1,4 +1,4 @@
-import { Prisma, TransactionCategory, TransactionScope, TransactionType, WishlistPriority } from "@prisma/client";
+import { Prisma, TransactionCategory, TransactionScope, TransactionStatus, TransactionType, WishlistPriority } from "../../node_modules/.prisma/client";
 import { Response } from "express";
 import { prisma } from "../config/prisma";
 import { AuthenticatedRequest } from "../types/auth-request";
@@ -324,7 +324,10 @@ export const purchaseWishlistItem = async (req: AuthenticatedRequest, res: Respo
                 type: TransactionType.EXPENSE,
                 category: existingItem.category,
                 transactionCategory: transactionCategory!,
+                status: existingItem.category === TransactionScope.SELF ? TransactionStatus.CONFIRMED : TransactionStatus.PENDING_CONFIRMATION,
                 createdById: userId,
+                confirmedById: existingItem.category === TransactionScope.SELF ? userId : null,
+                rejectedById: null,
                 pairId: existingItem.pairId,
               },
             })

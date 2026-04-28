@@ -3,6 +3,7 @@ import { Response } from "express";
 import { prisma } from "../config/prisma";
 import { AuthenticatedRequest } from "../types/auth-request";
 import { ensureDefaultRewards } from "../utils/rewards";
+import { createRewardPurchaseNotification } from "./notification.controller";
 
 const rewardPurchaseInclude = {
   reward: {
@@ -117,6 +118,8 @@ export const buyReward = async (req: AuthenticatedRequest, res: Response) => {
           pairId: true,
           points: true,
           winStreak: true,
+          nickname: true,
+          email: true,
         },
       });
 
@@ -167,6 +170,13 @@ export const buyReward = async (req: AuthenticatedRequest, res: Response) => {
           pairId: user.pairId,
         },
         include: rewardPurchaseInclude,
+      });
+
+      await createRewardPurchaseNotification(tx, {
+        actorId: user.id,
+        pairId: user.pairId,
+        actorLabel: user.nickname?.trim() || user.email,
+        rewardTitle: reward.title,
       });
 
       return {

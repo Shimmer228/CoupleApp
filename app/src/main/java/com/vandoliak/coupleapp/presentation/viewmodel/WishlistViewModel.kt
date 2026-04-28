@@ -98,6 +98,7 @@ class WishlistViewModel(app: Application) : AndroidViewModel(app) {
         url.value = ""
         priority.value = "MEDIUM"
         category.value = "SELF"
+        error.value = null
     }
 
     fun loadWishlist() {

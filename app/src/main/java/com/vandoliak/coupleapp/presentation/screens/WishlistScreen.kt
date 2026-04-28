@@ -13,10 +13,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -61,6 +66,7 @@ fun WishlistScreen(
     )
     val settingsManager = remember(context) { AppSettingsManager(context.applicationContext) }
     val currency by settingsManager.currencyFlow.collectAsState(initial = AppCurrency.UAH)
+    var showCreateDialog by remember { mutableStateOf(false) }
     var purchaseDialogItem by remember { mutableStateOf<WishlistItemDto?>(null) }
     var categoryDialogItem by remember { mutableStateOf<WishlistItemDto?>(null) }
     var editingItem by remember { mutableStateOf<WishlistItemDto?>(null) }
@@ -206,95 +212,159 @@ fun WishlistScreen(
         )
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        SectionTitle(
-            title = stringResource(R.string.wishlist_title),
-            subtitle = stringResource(R.string.wishlist_subtitle)
-        )
-
-        AppCard {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SectionTitle(title = stringResource(R.string.add_wishlist_item))
-                WishlistForm(viewModel = viewModel)
-                PrimaryActionButton(
-                    text = if (viewModel.isSubmitting.value) stringResource(R.string.saving) else stringResource(R.string.add_item),
-                    onClick = { viewModel.createItem() },
+    if (showCreateDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showCreateDialog = false
+                viewModel.resetForm()
+            },
+            title = { Text(stringResource(R.string.add_wishlist_item)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    WishlistForm(viewModel = viewModel)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.createItem {
+                            showCreateDialog = false
+                        }
+                    },
                     enabled = !viewModel.isSubmitting.value
-                )
-            }
-        }
-
-        viewModel.error.value?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.error
-            )
-        }
-
-        viewModel.successMessage.value?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-
-        SectionTitle(title = stringResource(R.string.planned_purchases))
-
-        if (viewModel.isLoading.value && viewModel.items.value.isEmpty()) {
-            EmptyState(
-                title = stringResource(R.string.loading_wishlist),
-                subtitle = stringResource(R.string.loading_wishlist_subtitle)
-            )
-        } else if (viewModel.items.value.isEmpty()) {
-            EmptyState(
-                title = stringResource(R.string.wishlist_empty),
-                subtitle = stringResource(R.string.wishlist_empty_subtitle)
-            )
-        } else {
-            viewModel.items.value.forEach { item ->
-                WishlistItemCard(
-                    item = item,
-                    currency = currency,
-                    canEdit = item.createdBy.id == viewModel.currentUserId.value,
-                    isSubmitting = viewModel.isSubmitting.value,
-                    onOpenLinkClick = {
-                        val normalizedUrl = normalizeExternalUrl(item.url)
-                        if (normalizedUrl != null) {
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW, Uri.parse(normalizedUrl))
-                            )
-                        }
-                    },
-                    onPurchaseClick = {
-                        if (item.price != null) {
-                            purchaseDialogItem = item
+                ) {
+                    Text(
+                        if (viewModel.isSubmitting.value) {
+                            stringResource(R.string.saving)
                         } else {
-                            viewModel.purchaseItem(item.id, createTransaction = false)
+                            stringResource(R.string.add_item)
                         }
-                    },
-                    onEditClick = {
-                        viewModel.populateEditor(item)
-                        editingItem = item
-                    },
-                    onDeleteClick = {
-                        deletingItem = item
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showCreateDialog = false
+                        viewModel.resetForm()
                     }
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = {
+                    viewModel.resetForm()
+                    showCreateDialog = true
+                }
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Add,
+                    contentDescription = stringResource(R.string.add_wishlist_item)
                 )
             }
         }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            SectionTitle(
+                title = stringResource(R.string.wishlist_title),
+                subtitle = stringResource(R.string.wishlist_subtitle)
+            )
 
-        Spacer(modifier = Modifier.height(8.dp))
+            viewModel.error.value?.takeIf {
+                it.isNotBlank() &&
+                    !showCreateDialog &&
+                    purchaseDialogItem == null &&
+                    categoryDialogItem == null &&
+                    editingItem == null &&
+                    deletingItem == null
+            }?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            viewModel.successMessage.value?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            SectionTitle(title = stringResource(R.string.planned_purchases))
+
+            if (viewModel.isLoading.value && viewModel.items.value.isEmpty()) {
+                EmptyState(
+                    title = stringResource(R.string.loading_wishlist),
+                    subtitle = stringResource(R.string.loading_wishlist_subtitle)
+                )
+            } else if (viewModel.items.value.isEmpty()) {
+                EmptyState(
+                    title = stringResource(R.string.wishlist_empty),
+                    subtitle = stringResource(R.string.wishlist_empty_subtitle)
+                )
+            } else {
+                viewModel.items.value.forEach { item ->
+                    WishlistItemCard(
+                        item = item,
+                        currency = currency,
+                        canEdit = item.createdBy.id == viewModel.currentUserId.value,
+                        isSubmitting = viewModel.isSubmitting.value,
+                        onOpenLinkClick = {
+                            val normalizedUrl = normalizeExternalUrl(item.url)
+                            if (normalizedUrl != null) {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(normalizedUrl))
+                                )
+                            }
+                        },
+                        onPurchaseClick = {
+                            if (item.price != null) {
+                                purchaseDialogItem = item
+                            } else {
+                                viewModel.purchaseItem(item.id, createTransaction = false)
+                            }
+                        },
+                        onEditClick = {
+                            viewModel.populateEditor(item)
+                            editingItem = item
+                        },
+                        onDeleteClick = {
+                            deletingItem = item
+                        }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(72.dp))
+        }
     }
 }
 
 @Composable
 private fun WishlistForm(viewModel: WishlistViewModel) {
+    viewModel.error.value?.takeIf { it.isNotBlank() }?.let {
+        Text(
+            text = it,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+
     OutlinedTextField(
         value = viewModel.title.value,
         onValueChange = viewModel::onTitleChange,

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.vandoliak.coupleapp.R
 import com.vandoliak.coupleapp.data.local.TokenManager
 import com.vandoliak.coupleapp.data.remote.RetrofitInstance
+import com.vandoliak.coupleapp.data.remote.SharedSplitRequest
 import com.vandoliak.coupleapp.data.remote.TaskActionResponse
 import com.vandoliak.coupleapp.data.remote.TaskCreateRequest
 import com.vandoliak.coupleapp.data.remote.TaskDto
@@ -31,6 +32,9 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     var dueDate = mutableStateOf("")
+        private set
+
+    var taskType = mutableStateOf("CHALLENGE")
         private set
 
     var recurrenceType = mutableStateOf("NONE")
@@ -75,6 +79,10 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         dueDate.value = sanitizeDateInput(value)
     }
 
+    fun onTaskTypeChange(value: String) {
+        taskType.value = value
+    }
+
     fun onRecurrenceTypeChange(value: String) {
         recurrenceType.value = value
         if (value != "EVERY_X_DAYS") {
@@ -92,10 +100,12 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun createTask() {
+    fun createTask(onSuccess: (() -> Unit)? = null) {
         val points = taskPoints.value.toIntOrNull()
         val apiDueDate = if (dueDate.value.isBlank()) null else dateInputToApiDate(dueDate.value)
         val recurrenceIntervalValue = recurrenceInterval.value.toIntOrNull()
+
+        successMessage.value = null
 
         if (taskTitle.value.isBlank()) {
             error.value = appString(R.string.task_title_required)
@@ -113,7 +123,7 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         if (recurrenceType.value != "NONE" && apiDueDate == null) {
-            error.value = appString(R.string.recurring_challenges_require_due_date)
+            error.value = appString(R.string.recurring_tasks_require_due_date)
             return
         }
 
@@ -124,12 +134,17 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch {
             executeTaskMutation(
-                successText = appString(R.string.challenge_created_successfully)
+                successText = if (taskType.value == "SHARED") {
+                    appString(R.string.shared_task_created_successfully)
+                } else {
+                    appString(R.string.challenge_created_successfully)
+                }
             ) { authorization ->
                 RetrofitInstance.taskApi.createTask(
                     authorization = authorization,
                     request = TaskCreateRequest(
                         title = taskTitle.value.trim(),
+                        type = taskType.value,
                         points = points,
                         dueDate = apiDueDate,
                         recurrenceType = recurrenceType.value,
@@ -139,13 +154,20 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             if (error.value == null) {
-                taskTitle.value = ""
-                taskPoints.value = ""
-                dueDate.value = ""
-                recurrenceType.value = "NONE"
-                recurrenceInterval.value = ""
+                resetCreateForm()
+                onSuccess?.invoke()
             }
         }
+    }
+
+    fun resetCreateForm() {
+        taskTitle.value = ""
+        taskPoints.value = ""
+        dueDate.value = ""
+        taskType.value = "CHALLENGE"
+        recurrenceType.value = "NONE"
+        recurrenceInterval.value = ""
+        error.value = null
     }
 
     fun requestCompletion(taskId: String) {
@@ -178,14 +200,44 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun proposeSharedSplit(taskId: String, myPoints: Int, partnerPoints: Int, onSuccess: (() -> Unit)? = null) {
+        runTaskAction(taskId, appString(R.string.shared_split_proposed), onSuccess) { authorization, id ->
+            RetrofitInstance.taskApi.proposeSharedSplit(
+                authorization = authorization,
+                taskId = id,
+                request = SharedSplitRequest(myPoints = myPoints, partnerPoints = partnerPoints)
+            )
+        }
+    }
+
+    fun acceptSharedSplit(taskId: String, onSuccess: (() -> Unit)? = null) {
+        runTaskAction(taskId, appString(R.string.shared_split_accepted), onSuccess) { authorization, id ->
+            RetrofitInstance.taskApi.acceptSharedSplit(authorization, id)
+        }
+    }
+
+    fun counterSharedSplit(taskId: String, myPoints: Int, partnerPoints: Int, onSuccess: (() -> Unit)? = null) {
+        runTaskAction(taskId, appString(R.string.shared_split_countered), onSuccess) { authorization, id ->
+            RetrofitInstance.taskApi.counterSharedSplit(
+                authorization = authorization,
+                taskId = id,
+                request = SharedSplitRequest(myPoints = myPoints, partnerPoints = partnerPoints)
+            )
+        }
+    }
+
     private fun runTaskAction(
         taskId: String,
         successText: String,
+        onSuccess: (() -> Unit)? = null,
         action: suspend (String, String) -> Response<TaskActionResponse>
     ) {
         viewModelScope.launch {
             executeTaskMutation(successText) { authorization ->
                 action(authorization, taskId)
+            }
+            if (error.value == null) {
+                onSuccess?.invoke()
             }
         }
     }

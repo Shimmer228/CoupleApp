@@ -114,6 +114,10 @@ object RetrofitInstance {
         retrofit.create(BlueprintApi::class.java)
     }
 
+    val notificationApi: NotificationApi by lazy {
+        retrofit.create(NotificationApi::class.java)
+    }
+
     fun resolveUrl(rawUrl: String?): String? {
         val value = rawUrl?.trim().orEmpty()
         if (value.isBlank()) {

@@ -1,4 +1,4 @@
-import { Prisma, TransactionCategory, TransactionScope, TransactionType } from "@prisma/client";
+import { Prisma, TransactionCategory, TransactionScope, TransactionStatus, TransactionType } from "../../node_modules/.prisma/client";
 import { Response } from "express";
 import { prisma } from "../config/prisma";
 import { AuthenticatedRequest } from "../types/auth-request";
@@ -26,6 +26,18 @@ const INCOME_CATEGORIES: TransactionCategory[] = [
 
 const transactionInclude = {
   createdBy: {
+    select: {
+      id: true,
+      email: true,
+    },
+  },
+  confirmedBy: {
+    select: {
+      id: true,
+      email: true,
+    },
+  },
+  rejectedBy: {
     select: {
       id: true,
       email: true,
@@ -111,6 +123,14 @@ const assertCategoryMatchesType = (type: TransactionType, category: TransactionC
   }
 };
 
+const getInitialTransactionStatus = (scope: TransactionScope) => {
+  return scope === TransactionScope.SELF
+    ? TransactionStatus.CONFIRMED
+    : TransactionStatus.PENDING_CONFIRMATION;
+};
+
+const isConfirmedTransaction = (status: TransactionStatus) => status === TransactionStatus.CONFIRMED;
+
 const getPairContext = async (userId: string): Promise<PairContext> => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -140,9 +160,14 @@ const getBalanceContribution = (
     type: TransactionType;
     category: TransactionScope;
     createdById: string;
+    status: TransactionStatus;
   },
   currentUserId: string
 ) => {
+  if (!isConfirmedTransaction(transaction.status)) {
+    return 0;
+  }
+
   const isCreator = transaction.createdById === currentUserId;
 
   if (transaction.category === TransactionScope.SELF) {
@@ -173,10 +198,11 @@ const buildCategorySummary = (
     amount: number;
     type: TransactionType;
     transactionCategory: TransactionCategory;
+    status: TransactionStatus;
   }>,
   type: TransactionType
 ) => {
-  const matching = transactions.filter((transaction) => transaction.type === type);
+  const matching = transactions.filter((transaction) => transaction.type === type && isConfirmedTransaction(transaction.status));
   const total = matching.reduce((sum, transaction) => sum + transaction.amount, 0);
   const grouped = new Map<TransactionCategory, number>();
 
@@ -256,6 +282,14 @@ const sendTransactionError = (res: Response, error: unknown) => {
     if (error.message === "TRANSACTION_CREATOR_ONLY") {
       return res.status(403).json({ message: "Only the transaction creator can edit or delete it" });
     }
+
+    if (error.message === "TRANSACTION_CONFIRMATION_FORBIDDEN") {
+      return res.status(403).json({ message: "Only the partner can confirm or reject this transaction" });
+    }
+
+    if (error.message === "TRANSACTION_NOT_PENDING") {
+      return res.status(400).json({ message: "Transaction is not waiting for confirmation" });
+    }
   }
 
   console.error("Transaction controller error:", error);
@@ -302,7 +336,10 @@ export const createTransaction = async (req: AuthenticatedRequest, res: Response
     const transaction = await prisma.transaction.create({
       data: {
         ...payload,
+        status: getInitialTransactionStatus(payload.category),
         createdById: userId,
+        confirmedById: payload.category === TransactionScope.SELF ? userId : null,
+        rejectedById: null,
         pairId: pairContext.pairId,
       },
       include: transactionInclude,
@@ -344,7 +381,12 @@ export const updateTransaction = async (req: AuthenticatedRequest, res: Response
 
     const transaction = await prisma.transaction.update({
       where: { id: existingTransaction.id },
-      data: payload,
+      data: {
+        ...payload,
+        status: getInitialTransactionStatus(payload.category),
+        confirmedById: payload.category === TransactionScope.SELF ? userId : null,
+        rejectedById: null,
+      },
       include: transactionInclude,
     });
 
@@ -432,6 +474,7 @@ export const getTransactionBalance = async (req: AuthenticatedRequest, res: Resp
         type: true,
         category: true,
         createdById: true,
+        status: true,
       },
     });
 
@@ -462,14 +505,15 @@ export const getTransactionSummary = async (req: AuthenticatedRequest, res: Resp
         category: true,
         transactionCategory: true,
         createdById: true,
+        status: true,
       },
     });
 
     const totalIncome = transactions
-      .filter((transaction) => transaction.type === TransactionType.INCOME)
+      .filter((transaction) => transaction.type === TransactionType.INCOME && isConfirmedTransaction(transaction.status))
       .reduce((sum, transaction) => sum + transaction.amount, 0);
     const totalExpense = transactions
-      .filter((transaction) => transaction.type === TransactionType.EXPENSE)
+      .filter((transaction) => transaction.type === TransactionType.EXPENSE && isConfirmedTransaction(transaction.status))
       .reduce((sum, transaction) => sum + transaction.amount, 0);
     const rawBalance = transactions.reduce((sum, transaction) => {
       return sum + getBalanceContribution(transaction, userId);
@@ -481,6 +525,78 @@ export const getTransactionSummary = async (req: AuthenticatedRequest, res: Resp
       expenseByCategory: buildCategorySummary(transactions, TransactionType.EXPENSE),
       incomeByCategory: buildCategorySummary(transactions, TransactionType.INCOME),
     });
+  } catch (error) {
+    return sendTransactionError(res, error);
+  }
+};
+
+export const confirmTransaction = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const transactionId = String(req.params.id ?? "");
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const pairContext = await getPairContext(userId);
+    const existingTransaction = await getTransactionForPair(transactionId, pairContext.pairId);
+
+    if (existingTransaction.createdById === userId) {
+      throw new Error("TRANSACTION_CONFIRMATION_FORBIDDEN");
+    }
+
+    if (existingTransaction.status !== TransactionStatus.PENDING_CONFIRMATION) {
+      throw new Error("TRANSACTION_NOT_PENDING");
+    }
+
+    const transaction = await prisma.transaction.update({
+      where: { id: existingTransaction.id },
+      data: {
+        status: TransactionStatus.CONFIRMED,
+        confirmedById: userId,
+        rejectedById: null,
+      },
+      include: transactionInclude,
+    });
+
+    return res.json({ transaction });
+  } catch (error) {
+    return sendTransactionError(res, error);
+  }
+};
+
+export const rejectTransaction = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const transactionId = String(req.params.id ?? "");
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const pairContext = await getPairContext(userId);
+    const existingTransaction = await getTransactionForPair(transactionId, pairContext.pairId);
+
+    if (existingTransaction.createdById === userId) {
+      throw new Error("TRANSACTION_CONFIRMATION_FORBIDDEN");
+    }
+
+    if (existingTransaction.status !== TransactionStatus.PENDING_CONFIRMATION) {
+      throw new Error("TRANSACTION_NOT_PENDING");
+    }
+
+    const transaction = await prisma.transaction.update({
+      where: { id: existingTransaction.id },
+      data: {
+        status: TransactionStatus.REJECTED,
+        confirmedById: null,
+        rejectedById: userId,
+      },
+      include: transactionInclude,
+    });
+
+    return res.json({ transaction });
   } catch (error) {
     return sendTransactionError(res, error);
   }

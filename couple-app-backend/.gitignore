@@ -3,3 +3,19 @@ node_modules
 .env
 
 /src/generated/prisma
+# Gradle / Android local caches
+.gradle/
+.gradle-local/
+build/
+app/build/
+
+# IDE
+.idea/
+*.iml
+
+# Backend
+node_modules/
+dist/
+
+# Logs
+*.log

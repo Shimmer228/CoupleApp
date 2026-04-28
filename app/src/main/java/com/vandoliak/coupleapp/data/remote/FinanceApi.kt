@@ -29,7 +29,10 @@ data class TransactionDto(
     val type: String,
     val category: String,
     val transactionCategory: String,
+    val status: String,
     val createdBy: TransactionUserDto,
+    val confirmedBy: TransactionUserDto?,
+    val rejectedBy: TransactionUserDto?,
     val createdAt: String
 )
 
@@ -107,4 +110,16 @@ interface FinanceApi {
     suspend fun getSummary(
         @Header("Authorization") authorization: String
     ): Response<TransactionSummaryResponse>
+
+    @POST("api/transactions/confirm/{id}")
+    suspend fun confirmTransaction(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String
+    ): Response<TransactionResponse>
+
+    @POST("api/transactions/reject/{id}")
+    suspend fun rejectTransaction(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String
+    ): Response<TransactionResponse>
 }
